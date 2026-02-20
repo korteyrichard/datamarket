@@ -10,10 +10,14 @@ use App\Http\Controllers\OrdersController;
 use App\Http\Controllers\TransactionsController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\GuestPurchaseController;
 
-Route::get('/', function () {
-    return Inertia::render('welcome');
-})->name('home');
+Route::get('/', [GuestPurchaseController::class, 'index'])->name('home');
+Route::post('/guest/checkout', [GuestPurchaseController::class, 'checkout'])->name('guest.checkout');
+Route::get('/guest/payment/callback', [GuestPurchaseController::class, 'handleCallback'])->name('guest.payment.callback');
+Route::get('/guest/order/success/{order}', [GuestPurchaseController::class, 'orderSuccess'])->name('guest.order.success');
+Route::post('/guest/track-order', [GuestPurchaseController::class, 'trackOrder'])->name('guest.track.order');
+Route::post('/guest/create-order-from-reference', [GuestPurchaseController::class, 'createOrderFromReference'])->name('guest.create.order.reference');
 
 Route::get('/become-a-dealer', function () {
         $user = auth()->user();
@@ -150,6 +154,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->name('admin.')->group(fun
     Route::get('admin/users/{user}/transactions', [\App\Http\Controllers\AdminDashboardController::class, 'userTransactions'])->name('users.transactions');
     Route::post('admin/orders/export', [\App\Http\Controllers\AdminDashboardController::class, 'exportOrders'])->name('orders.export');
     Route::post('admin/api/toggle', [\App\Http\Controllers\AdminDashboardController::class, 'toggleApi'])->name('api.toggle');
+    Route::post('admin/codecraft-api/toggle', [\App\Http\Controllers\AdminDashboardController::class, 'toggleCodeCraftApi'])->name('codecraft.api.toggle');
     Route::get('admin/alerts', [\App\Http\Controllers\AdminDashboardController::class, 'alerts'])->name('alerts');
     Route::post('admin/alerts', [\App\Http\Controllers\AdminDashboardController::class, 'storeAlert'])->name('alerts.store');
     Route::put('admin/alerts/{alert}', [\App\Http\Controllers\AdminDashboardController::class, 'updateAlert'])->name('alerts.update');

@@ -8,6 +8,8 @@ import MTNCard from '../../components/MTNCard';
 import AlertBanner from '../../components/AlertBanner';
 import { Icon } from '@/components/ui/icon';
 import { Link } from '@inertiajs/react';
+import PwaInstallBanner from '../../components/PwaInstallBanner';
+import axios from '@/lib/axios';
 
 
 interface Product {
@@ -105,25 +107,17 @@ export default function Dashboard({ auth }: DashboardProps) {
                 setIsAdding(true);
                 setAddError(null);
                 try {
-                  const response = await fetch('/dashboard/wallet/add', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Accept': 'application/json',
-                      'X-Requested-With': 'XMLHttpRequest',
-                      'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                    },
-                    body: JSON.stringify({ amount: addAmount }),
-                  });
-                  const data = await response.json();
+                  const response = await axios.post('/dashboard/wallet/add', { amount: addAmount });
+                  const data = response.data;
                   if (data.success && data.payment_url) {
                     // Redirect to Paystack payment page
                     window.location.href = data.payment_url;
                   } else {
                     setAddError(data.message || 'Failed to initialize payment.');
                   }
-                } catch (err) {
-                  setAddError('Error initializing payment.');
+                } catch (err: any) {
+                  const errorMessage = err.response?.data?.message || 'Error initializing payment.';
+                  setAddError(errorMessage);
                 } finally {
                   setIsAdding(false);
                 }
@@ -221,11 +215,12 @@ export default function Dashboard({ auth }: DashboardProps) {
                 <div className="flex items-center justify-between">
                   <p className="text-2xl font-bold">GHS {walletBalance}</p>
                   <button
-                    className="w-8 h-8 bg-white/20 hover:bg-white/30 transition-colors duration-200 rounded-full flex items-center justify-center"
+                    className="w-12 h-12 bg-white/40 hover:bg-white/50 transition-all duration-200 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-110"
                     onClick={() => setShowAddModal(true)}
                     aria-label="Add to wallet"
+                    title="Add funds to wallet"
                   >
-                    <span className="text-xl font-light">+</span>
+                    <span className="text-2xl font-bold">+</span>
                   </button>
                 </div>
               </div>
@@ -417,6 +412,7 @@ export default function Dashboard({ auth }: DashboardProps) {
           </Link>
         </div>
       </div>
+      <PwaInstallBanner />
     </DashboardLayout>
   );
 }

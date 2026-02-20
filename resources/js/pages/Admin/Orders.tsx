@@ -29,7 +29,7 @@ interface Order {
     id: number;
     name: string;
     email: string;
-  };
+  } | null;
   commission?: {
     id: number;
     amount: number;
@@ -372,8 +372,8 @@ export default function AdminOrders() {
                       <td className="px-3 sm:px-5 py-3 sm:py-4 font-semibold">{order.id}</td>
                       <td className="px-3 sm:px-5 py-3 sm:py-4">
                         <div className="text-sm">
-                          <div className="font-medium">{order.user.name}</div>
-                          <div className="text-gray-500 text-xs">{order.user.email}</div>
+                          <div className="font-medium">{order.user ? order.user.name : 'Guest Order'}</div>
+                          <div className="text-gray-500 text-xs">{order.user ? order.user.email : order.customer_email || '-'}</div>
                         </div>
                       </td>
                       <td className="px-3 sm:px-5 py-3 sm:py-4">

@@ -6,22 +6,26 @@ use App\Models\Order;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Services\CommissionService;
+use App\Services\CodeCraftOrderStatusSyncService;
 
 class OrderStatusSyncService
 {
     private $jaybartApiKey;
     private $moolreSmsService;
     private $commissionService;
+    private $codeCraftSyncService;
 
     public function __construct()
     {
         $this->jaybartApiKey = env('ORDER_PUSHER_API_KEY', '');
         $this->moolreSmsService = new SmsService();
         $this->commissionService = new CommissionService();
+        $this->codeCraftSyncService = new CodeCraftOrderStatusSyncService();
     }
 
     public function syncOrderStatuses()
     {
+        // Sync Jaybart orders (MTN)
         $processingOrders = Order::whereIn('status', ['pending', 'processing'])->with('user')->get();
         
         foreach ($processingOrders as $order) {
@@ -31,6 +35,9 @@ class OrderStatusSyncService
                 Log::error('Failed to sync order status', ['orderId' => $order->id, 'error' => $e->getMessage()]);
             }
         }
+        
+        // Sync CodeCraft orders (Telecel, AT Data, AT Big Packages)
+        $this->codeCraftSyncService->syncOrderStatuses();
     }
 
     private function syncJaybartOrderStatus($order)

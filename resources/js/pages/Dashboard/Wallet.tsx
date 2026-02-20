@@ -3,6 +3,7 @@ import DashboardLayout from '../../layouts/DashboardLayout';
 import { Head, router,usePage } from '@inertiajs/react';
 import { PageProps } from '@/types';
 import { User } from '@/types';
+import axios from '@/lib/axios';
 
 interface Transaction {
   id: number;
@@ -60,24 +61,16 @@ export default function Wallet({ auth, transactions }: WalletPageProps) {
   const handleVerifyPayment = async (reference: string, txId: number) => {
     setVerifyingTx(txId);
     try {
-      const response = await fetch('/dashboard/wallet/verify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-        },
-        body: JSON.stringify({ reference }),
-      });
-      const data = await response.json();
+      const response = await axios.post('/dashboard/wallet/verify', { reference });
+      const data = response.data;
       if (data.success) {
         router.reload();
       } else {
         alert(data.message || 'Verification failed');
       }
-    } catch (err) {
-      alert('Error verifying payment');
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || 'Error verifying payment';
+      alert(errorMessage);
     } finally {
       setVerifyingTx(null);
     }
@@ -114,25 +107,17 @@ export default function Wallet({ auth, transactions }: WalletPageProps) {
                 setIsAdding(true);
                 setAddError(null);
                 try {
-                  const response = await fetch('/dashboard/wallet/add', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Accept': 'application/json',
-                      'X-Requested-With': 'XMLHttpRequest',
-                      'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                    },
-                    body: JSON.stringify({ amount: addAmount }),
-                  });
-                  const data = await response.json();
+                  const response = await axios.post('/dashboard/wallet/add', { amount: addAmount });
+                  const data = response.data;
                   if (data.success && data.payment_url) {
                     // Redirect to Paystack payment page
                     window.location.href = data.payment_url;
                   } else {
                     setAddError(data.message || 'Failed to initialize payment.');
                   }
-                } catch (err) {
-                  setAddError('Error initializing payment.');
+                } catch (err: any) {
+                  const errorMessage = err.response?.data?.message || 'Error initializing payment.';
+                  setAddError(errorMessage);
                 } finally {
                   setIsAdding(false);
                 }

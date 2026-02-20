@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 720">
+  <rect width="540" height="720" fill="#f0f0f0"/>
+  <rect x="0" y="0" width="540" height="400" rx="40" fill="#4B5563"/>
+  <text x="270" y="200" font-size="180" font-weight="bold" fill="#ffffff" text-anchor="middle" font-family="Arial">DataMarket</text>
+  <text x="270" y="550" font-size="60" fill="#4B5563" text-anchor="middle" font-family="Arial">Install App</text>
+</svg>

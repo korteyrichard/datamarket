@@ -1,11 +1,85 @@
 import { type SharedData } from '@/types';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, usePage, useForm } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
+import axios from 'axios';
+import PwaInstallBanner from '@/components/PwaInstallBanner';
 
-export default function Welcome() {
+interface Product {
+    id: number;
+    name: string;
+    price: number;
+    description: string;
+    network: string;
+    status: string;
+}
+
+interface WelcomeProps {
+    products: Product[];
+}
+
+export default function Welcome({ products }: WelcomeProps) {
     const { auth } = usePage<SharedData>().props;
     const [scrolled, setScrolled] = useState(false);
-    const [navOpen, setNavOpen] = useState(false); // Mobile nav state
+    const [navOpen, setNavOpen] = useState(false);
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+    const [showTrackOrderModal, setShowTrackOrderModal] = useState(false);
+    const [trackingData, setTrackingData] = useState({ beneficiary_number: '', paystack_reference: '' });
+    const [trackingResult, setTrackingResult] = useState<any>(null);
+    const [isTracking, setIsTracking] = useState(false);
+    const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+
+    const { data, setData, post, processing, errors, reset } = useForm({
+        product_id: 0,
+        customer_email: '',
+        beneficiary_number: '',
+    });
+
+    const getCardColors = (network: string) => {
+        const networkLower = network.toLowerCase();
+        if (networkLower.includes('mtn')) {
+            return { bg: 'bg-yellow-400', text: 'text-yellow-600', button: 'from-yellow-500 to-yellow-600' };
+        } else if (networkLower.includes('telecel')) {
+            return { bg: 'bg-red-500', text: 'text-red-600', button: 'from-red-500 to-red-600' };
+        } else if (networkLower.includes('at')) {
+            return { bg: 'bg-blue-900', text: 'text-blue-900', button: 'from-blue-900 to-blue-950' };
+        }
+        return { bg: 'bg-white', text: 'text-blue-600', button: 'from-blue-600 to-cyan-600' };
+    };
+
+    const handleBuyNow = (product: Product) => {
+        setSelectedProduct(product);
+        setData('product_id', product.id);
+        setShowCheckoutModal(true);
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        post(route('guest.checkout'), {
+            onSuccess: () => {
+                reset();
+                setShowCheckoutModal(false);
+            },
+        });
+    };
+
+    const handleTrackOrder = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsTracking(true);
+        setTrackingResult(null);
+
+        try {
+            const response = await axios.post('/guest/track-order', trackingData);
+            setTrackingResult(response.data);
+        } catch (error: any) {
+            setTrackingResult({
+                success: false,
+                message: error.response?.data?.message || 'Error tracking order'
+            });
+        } finally {
+            setIsTracking(false);
+        }
+    };
 
     useEffect(() => {
         const handleScroll = () => {
@@ -131,104 +205,260 @@ export default function Welcome() {
                     </div>
                 </nav>
 
-                {/* Hero Section */}
-                <section className="min-h-screen flex items-center justify-center text-center px-4 sm:px-6 lg:px-8 relative overflow-hidden pt-20">
-                    <div className="max-w-6xl mx-auto z-10 relative">
-                        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white mb-6 leading-tight">
-                            Start Your Own{' '}
-                            <span className="bg-gradient-to-r from-yellow-300 to-yellow-500 bg-clip-text text-transparent">
-                                Data Business
-                            </span>
-                            {' '}Today
-                        </h1>
-                        <p className="text-xl sm:text-2xl text-white/90 mb-12 max-w-3xl mx-auto leading-relaxed">
-                            Create your personalized shop, sell data, and earn commissions on every sale
-                        </p>
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
-                            {auth.user ? (
-                                <Link
-                                    href={auth.user.role === 'admin' ? route('admin.dashboard') : route('dashboard')}
-                                    className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white font-bold text-lg rounded-full hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 transform hover:scale-105"
-                                >
-                                    Go to Dashboard
-                                </Link>
-                            ) : (
-                                <Link
-                                    href={route('register')}
-                                    className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white font-bold text-lg rounded-full hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 transform hover:scale-105"
-                                >
-                                    Start Earning Today
-                                </Link>
-                            )}
-                        </div>
+                {/* Track Order Button */}
+                <div className="text-center pt-24 pb-8 px-4 flex gap-4 justify-center items-center">
+                    <button
+                        onClick={() => {
+                            setShowTrackOrderModal(true);
+                            setTrackingResult(null);
+                        }}
+                        className="px-6 py-2 text-white font-semibold bg-blue-600 hover:bg-blue-700 transition-colors"
+                    >
+                        📋 Track Order
+                    </button>
+                    <a
+                        href="https://t.me/Richie_bankx"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-6 py-2 text-white font-semibold bg-blue-600 hover:bg-blue-700 transition-colors"
+                    >
+                        📞 Contact Us
+                    </a>
+                </div>
 
-                        {/* Features Grid */}
-                        <div id="features" className="grid md:grid-cols-3 gap-6 mt-16">
-                            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 hover:bg-white/15 transition-all">
-                                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mb-4">
-                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                    </svg>
+                {/* Products Section */}
+                <section className="min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 pt-12">
+                    <div className="max-w-7xl mx-auto w-full">
+                        {products && products.length > 0 && (
+                            <div className="text-center">
+                                <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">Buy Data Now</h2>
+                                <p className="text-white/80 mb-8">No registration required - Quick and easy purchase</p>
+                                <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-6">
+                                    {products.map((product) => {
+                                        const colors = getCardColors(product.network);
+                                        return (
+                                            <div key={product.id} className={`${colors.bg} rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:-translate-y-1`}>
+                                                <div className={`text-sm font-semibold ${colors.text} mb-2`}>{product.network}</div>
+                                                <h3 className="text-xl font-bold text-gray-900 mb-2">{product.name}</h3>
+                                                <p className="text-gray-600 text-sm mb-4">{product.description}</p>
+                                                <div className="text-2xl font-bold text-gray-900 mb-4">GHS {product.price}</div>
+                                                <button
+                                                    onClick={() => handleBuyNow(product)}
+                                                    className={`w-full px-4 py-3 bg-gradient-to-r ${colors.button} text-white font-semibold hover:opacity-90 transition-all`}
+                                                >
+                                                    Buy Now
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                                <h3 className="text-2xl font-bold text-white mb-3">Your Own Shop</h3>
-                                <p className="text-white/80 leading-relaxed">
-                                    Get a personalized shop with your business name. Customize colors and share your unique link with customers.
-                                </p>
                             </div>
-                            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 hover:bg-white/15 transition-all">
-                                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mb-4">
-                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                </div>
-                                <h3 className="text-2xl font-bold text-white mb-3">Earn Commissions</h3>
-                                <p className="text-white/80 leading-relaxed">
-                                    Make money on every sale. Track your earnings in real-time and withdraw anytime to your mobile money account.
-                                </p>
-                            </div>
-                            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 hover:bg-white/15 transition-all">
-                                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mb-4">
-                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                </div>
-                                <h3 className="text-2xl font-bold text-white mb-3">Instant Delivery</h3>
-                                <p className="text-white/80 leading-relaxed">
-                                    All orders are processed instantly. Your customers receive their data immediately after payment.
-                                </p>
-                            </div>
-                        </div>
+                        )}
+                    </div>
+                </section>
 
-                        {/* How It Works */}
-                        <div className="mt-20">
-                            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-12">How It Works</h2>
-                            <div className="grid md:grid-cols-4 gap-6">
-                                <div className="text-center">
-                                    <div className="w-16 h-16 bg-yellow-400 rounded-full flex items-center justify-center text-2xl font-bold text-gray-900 mx-auto mb-4">1</div>
-                                    <h4 className="text-xl font-bold text-white mb-2">Register</h4>
-                                    <p className="text-white/70">Create your free account in seconds</p>
+                {/* Checkout Modal */}
+                {showCheckoutModal && selectedProduct && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white max-w-md w-full p-6 shadow-xl">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xl font-bold text-gray-900">Complete Purchase</h3>
+                                <button
+                                    onClick={() => setShowCheckoutModal(false)}
+                                    className="text-gray-500 hover:text-gray-700"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            
+                            <div className="mb-4 p-4 bg-gray-100 border border-gray-300">
+                                <div className="text-sm text-gray-700 font-semibold">{selectedProduct.network}</div>
+                                <div className="text-lg font-bold text-gray-900">{selectedProduct.name}</div>
+                                <div className="text-2xl font-bold text-gray-900 mt-2">GHS {selectedProduct.price}</div>
+                            </div>
+
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Your Email</label>
+                                    <input
+                                        type="email"
+                                        value={data.customer_email}
+                                        onChange={(e) => setData('customer_email', e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        required
+                                    />
+                                    {errors.customer_email && <div className="text-red-500 text-sm mt-1">{errors.customer_email}</div>}
                                 </div>
-                                <div className="text-center">
-                                    <div className="w-16 h-16 bg-yellow-400 rounded-full flex items-center justify-center text-2xl font-bold text-gray-900 mx-auto mb-4">2</div>
-                                    <h4 className="text-xl font-bold text-white mb-2">Setup Shop</h4>
-                                    <p className="text-white/70">Upgrade to dealer and customize your shop</p>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number to Receive Data</label>
+                                    <input
+                                        type="tel"
+                                        maxLength={10}
+                                        minLength={10}
+                                        pattern="[0-9]{10}"
+                                        value={data.beneficiary_number}
+                                        onChange={(e) => setData('beneficiary_number', e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="0241234567"
+                                        required
+                                    />
+                                    {errors.beneficiary_number && <div className="text-red-500 text-sm mt-1">{errors.beneficiary_number}</div>}
                                 </div>
-                                <div className="text-center">
-                                    <div className="w-16 h-16 bg-yellow-400 rounded-full flex items-center justify-center text-2xl font-bold text-gray-900 mx-auto mb-4">3</div>
-                                    <h4 className="text-xl font-bold text-white mb-2">Share Link</h4>
-                                    <p className="text-white/70">Share your shop link with customers</p>
+
+                                <button
+                                    type="submit"
+                                    disabled={processing}
+                                    className="w-full px-6 py-3 bg-blue-600 text-white font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                                >
+                                    {processing ? 'Processing...' : 'Proceed to Payment'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Track Order Modal */}
+                {showTrackOrderModal && (
+                    <div className="fixed inset-0 bg-black/60 z-50 overflow-y-auto">
+                        <div className="flex min-h-full items-center justify-center p-4">
+                            <div className="relative w-full max-w-lg bg-white shadow-2xl">
+                                <div className="absolute -top-3 right-4">
+                                    <button
+                                        onClick={() => {
+                                            setShowTrackOrderModal(false);
+                                            setTrackingResult(null);
+                                            setTrackingData({ beneficiary_number: '', paystack_reference: '' });
+                                        }}
+                                        className="inline-flex h-8 w-8 items-center justify-center bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                                    >
+                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                                        </svg>
+                                    </button>
                                 </div>
-                                <div className="text-center">
-                                    <div className="w-16 h-16 bg-yellow-400 rounded-full flex items-center justify-center text-2xl font-bold text-gray-900 mx-auto mb-4">4</div>
-                                    <h4 className="text-xl font-bold text-white mb-2">Earn Money</h4>
-                                    <p className="text-white/70">Get paid for every successful sale</p>
+
+                                <div className="p-8">
+                                    <div className="text-center mb-6">
+                                        <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 mb-3">
+                                            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-2">Track Your Order</h3>
+                                        <p className="text-gray-600">Enter your details to find or recover your order</p>
+                                    </div>
+
+                                    <form onSubmit={handleTrackOrder} className="space-y-6">
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">📱 Beneficiary Phone Number</label>
+                                            <input
+                                                type="text"
+                                                maxLength={10}
+                                                minLength={10}
+                                                pattern="[0-9]{10}"
+                                                value={trackingData.beneficiary_number}
+                                                onChange={(e) => setTrackingData({...trackingData, beneficiary_number: e.target.value})}
+                                                placeholder="0XXXXXXXXX"
+                                                className="w-full px-4 py-3 border border-gray-300 focus:border-gray-500 transition-colors"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2">💳 Paystack Reference</label>
+                                            <input
+                                                type="text"
+                                                value={trackingData.paystack_reference}
+                                                onChange={(e) => setTrackingData({...trackingData, paystack_reference: e.target.value})}
+                                                placeholder="Enter your payment reference (starts with 'guest')"
+                                                className="w-full px-4 py-3 border border-gray-300 focus:border-gray-500 transition-colors"
+                                                required
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">This is the reference from your payment confirmation</p>
+                                        </div>
+
+                                        <div className="flex flex-col sm:flex-row gap-3">
+                                            <button 
+                                                type="button" 
+                                                onClick={() => {
+                                                    setShowTrackOrderModal(false);
+                                                    setTrackingResult(null);
+                                                    setTrackingData({ beneficiary_number: '', paystack_reference: '' });
+                                                }}
+                                                className="flex-1 py-3 border border-gray-300 hover:border-gray-400 font-semibold text-gray-700 transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button 
+                                                type="submit" 
+                                                disabled={isTracking} 
+                                                className="flex-1 py-3 border border-blue-500 bg-blue-500 text-white font-semibold hover:bg-blue-600 disabled:opacity-50 transition-all"
+                                            >
+                                                {isTracking ? '⏳ Searching...' : '🔍 Track Order'}
+                                            </button>
+                                        </div>
+                                    </form>
+
+                                    {/* Tracking Results */}
+                                    {trackingResult && (
+                                        <div className="mt-6 p-6 border">
+                                            {trackingResult.success ? (
+                                                trackingResult.order_found ? (
+                                                    <div className="text-center">
+                                                        <div className="w-12 h-12 bg-green-100 flex items-center justify-center mx-auto mb-4">
+                                                            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                            </svg>
+                                                        </div>
+                                                        <h4 className="text-lg font-bold text-green-800 mb-2">✅ Order Found!</h4>
+                                                        <div className="text-left space-y-2">
+                                                            <p><strong>Order ID:</strong> #{trackingResult.order.id}</p>
+                                                            <p><strong>Status:</strong> <span className="capitalize">{trackingResult.order.status}</span></p>
+                                                            <p><strong>Total:</strong> ₵{trackingResult.order.total}</p>
+                                                            <p><strong>Network:</strong> {trackingResult.order.network}</p>
+                                                            <p><strong>Date:</strong> {new Date(trackingResult.order.created_at).toLocaleDateString()}</p>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div>
+                                                        <div className="w-12 h-12 bg-yellow-100 flex items-center justify-center mx-auto mb-4">
+                                                            <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                        </div>
+                                                        <h4 className="text-lg font-bold text-yellow-800 mb-2">⚠ Order Not Found</h4>
+                                                        <p className="text-yellow-700 mb-4">Your payment was verified but no order exists. You can proceed to create an order.</p>
+                                                        <div className="text-left bg-blue-50 p-4 mb-4">
+                                                            <p className="text-sm"><strong>Payment Amount:</strong> ₵{trackingResult.payment_data.amount}</p>
+                                                            <p className="text-sm"><strong>Email:</strong> {trackingResult.payment_data.email}</p>
+                                                            <p className="text-sm"><strong>Date:</strong> {new Date(trackingResult.payment_data.paid_at).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <p className="text-sm text-gray-600 text-center">Contact support or an agent to create your order</p>
+                                                    </div>
+                                                )
+                                            ) : (
+                                                <div className="text-center">
+                                                    <div className="w-12 h-12 bg-red-100 flex items-center justify-center mx-auto mb-4">
+                                                        <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </div>
+                                                    <h4 className="text-lg font-bold text-red-800 mb-2">❌ Error</h4>
+                                                    <p className="text-red-700">{trackingResult.message}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
                     </div>
-                </section>
+                )}
 
             </div>
+            <PwaInstallBanner />
         </>
     );
 }

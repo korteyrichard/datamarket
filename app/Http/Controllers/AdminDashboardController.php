@@ -44,6 +44,7 @@ class AdminDashboardController extends Controller
             'todayRevenue' => $todayRevenue,
             'totalRevenue' => $totalRevenue,
             'apiEnabled' => Setting::get('api_enabled', 'true') === 'true',
+            'codeCraftApiEnabled' => Setting::get('codecraft_api_enabled', 'true') === 'true',
         ]);
     }
 
@@ -598,6 +599,20 @@ class AdminDashboardController extends Controller
         Setting::set('api_enabled', $request->enabled ? 'true' : 'false');
 
         return redirect()->back()->with('success', 'API status updated successfully.');
+    }
+
+    /**
+     * Toggle CodeCraft API status.
+     */
+    public function toggleCodeCraftApi(Request $request)
+    {
+        $request->validate([
+            'enabled' => 'required|boolean',
+        ]);
+
+        Setting::set('codecraft_api_enabled', $request->enabled ? 'true' : 'false');
+
+        return redirect()->back()->with('success', 'CodeCraft API status updated successfully.');
     }
 
     /**

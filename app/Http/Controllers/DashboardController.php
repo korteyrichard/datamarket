@@ -21,13 +21,13 @@ class DashboardController extends Controller
     {
         $user = auth()->user();
         
-        // Filter products based on user role and stock status
+        // Filter products based on user role and stock status, sorted by quantity
         if ($user->isAdmin()) {
             // Admin can see all products
-            $products = Product::inStock()->get();
+            $products = Product::inStock()->orderBy('quantity', 'asc')->get();
         } else {
             // Use role-based filtering for other users
-            $products = Product::forRole($user->role)->inStock()->get();
+            $products = Product::forRole($user->role)->inStock()->orderBy('quantity', 'asc')->get();
         }
         
         $cartCount = 0;

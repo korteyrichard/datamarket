@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import React, { useState } from 'react';
+import axios from '@/lib/axios';
 
 interface DashboardStats {
     total_commissions: number;
@@ -80,16 +81,13 @@ export default function AgentDashboard({ auth, dashboardData, agentProducts, ava
         formData.append('product_id', selectedProduct);
         formData.append('agent_price', agentPrice);
         
-        fetch('/dealer/products', {
-            method: 'POST',
+        axios.post('/dealer/products', formData, {
             headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: formData
+                'Content-Type': 'multipart/form-data',
+            }
         })
         .then(response => {
-            if (response.ok) {
+            if (response.status === 200 || response.status === 201) {
                 setSelectedProduct('');
                 setAgentPrice('');
                 window.location.reload();

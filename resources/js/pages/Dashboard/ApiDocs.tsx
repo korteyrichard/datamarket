@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../layouts/DashboardLayout';
 import { Head, usePage, router } from '@inertiajs/react';
 import { PageProps } from '@/types';
+import axios from '@/lib/axios';
 
 interface Product {
   id: number;
@@ -35,16 +36,8 @@ export default function ApiDocs({ auth }: ApiDocsProps) {
     setError('');
 
     try {
-      const response = await fetch(route('api.docs.generate-key'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
+      const response = await axios.post(route('api.docs.generate-key'), { email, password });
+      const data = response.data;
 
       if (data.success) {
         setApiKey(data.api_key);
@@ -53,8 +46,9 @@ export default function ApiDocs({ auth }: ApiDocsProps) {
       } else {
         setError(data.message || 'Login failed');
       }
-    } catch (err) {
-      setError('Network error occurred');
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || err.message || 'Network error occurred';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Models\Transaction;
 use App\Services\OrderPusherService;
+use App\Services\CodeCraftOrderPusherService;
 use App\Services\CommissionService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
@@ -111,9 +112,22 @@ class OrdersController extends Controller
 
             DB::commit();
 
-            // Push order to external API
+            // Push order to external API based on network
             try {
-                $orderPusher = new OrderPusherService();
+                $productName = strtolower($product->name ?? '');
+                
+                // Route to CodeCraft for Telecel, AT Data (Instant), and AT (Big Packages)
+                if (stripos($productName, 'telecel') !== false || 
+                    stripos($productName, 'at data') !== false || 
+                    stripos($productName, 'at (big packages)') !== false) {
+                    $orderPusher = new CodeCraftOrderPusherService();
+                    Log::info('Routing API order to CodeCraft API', ['order_id' => $order->id, 'product' => $productName]);
+                } else {
+                    // MTN goes through OrderPusherService
+                    $orderPusher = new OrderPusherService();
+                    Log::info('Routing API order to OrderPusher API', ['order_id' => $order->id, 'product' => $productName]);
+                }
+                
                 $orderPusher->pushOrderToApi($order);
             } catch (\Exception $e) {
                 Log::error('Failed to push API order to external service', ['error' => $e->getMessage()]);

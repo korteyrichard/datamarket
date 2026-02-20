@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\Commission;
 use App\Models\Transaction;
 use App\Services\OrderPusherService;
+use App\Services\CodeCraftOrderPusherService;
 use App\Services\PaystackService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -198,9 +199,22 @@ class PublicShopController extends Controller
                 // Clear session
                 session()->forget('pending_agent_order');
 
-                // Push order to external API
+                // Push order to external API based on network
                 try {
-                    $orderPusher = new OrderPusherService();
+                    $productName = strtolower(Product::find($orderData['product_id'])->name ?? '');
+                    
+                    // Route to CodeCraft for Telecel, AT Data (Instant), and AT (Big Packages)
+                    if (stripos($productName, 'telecel') !== false || 
+                        stripos($productName, 'at data') !== false || 
+                        stripos($productName, 'at (big packages)') !== false) {
+                        $orderPusher = new CodeCraftOrderPusherService();
+                        Log::info('Routing dealer shop order to CodeCraft API', ['order_id' => $order->id, 'product' => $productName]);
+                    } else {
+                        // MTN goes through OrderPusherService
+                        $orderPusher = new OrderPusherService();
+                        Log::info('Routing dealer shop order to OrderPusher API', ['order_id' => $order->id, 'product' => $productName]);
+                    }
+                    
                     $orderPusher->pushOrderToApi($order);
                 } catch (\Exception $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to push agent shop order to external API', [
@@ -407,7 +421,7 @@ class PublicShopController extends Controller
 
             \DB::commit();
 
-            // Push order to external API (outside transaction)
+            // Push order to external API (outside transaction) based on network
             try {
                 Log::info('Pushing recovered order to external API', [
                     'order_id' => $order->id,
@@ -415,7 +429,20 @@ class PublicShopController extends Controller
                     'beneficiary' => $request->beneficiary_number
                 ]);
                 
-                $orderPusher = new OrderPusherService();
+                $productName = strtolower($product->name ?? '');
+                
+                // Route to CodeCraft for Telecel, AT Data (Instant), and AT (Big Packages)
+                if (stripos($productName, 'telecel') !== false || 
+                    stripos($productName, 'at data') !== false || 
+                    stripos($productName, 'at (big packages)') !== false) {
+                    $orderPusher = new CodeCraftOrderPusherService();
+                    Log::info('Routing recovered order to CodeCraft API', ['order_id' => $order->id, 'product' => $productName]);
+                } else {
+                    // MTN goes through OrderPusherService
+                    $orderPusher = new OrderPusherService();
+                    Log::info('Routing recovered order to OrderPusher API', ['order_id' => $order->id, 'product' => $productName]);
+                }
+                
                 $orderPusher->pushOrderToApi($order);
                 
                 Log::info('Successfully pushed recovered order to API', ['order_id' => $order->id]);

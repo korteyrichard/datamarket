@@ -36,6 +36,18 @@
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
+        {{-- PWA Manifest --}}
+        <link rel="manifest" href="/manifest.json">
+
+        {{-- Apple PWA Meta Tags --}}
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="{{ config('app.name', 'DataMarket') }}">
+        <meta name="apple-touch-icon" href="/icons/icon-192.png">
+
+        {{-- Theme Color --}}
+        <meta name="theme-color" content="#4B5563">
+
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
 
