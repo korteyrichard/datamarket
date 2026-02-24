@@ -145,6 +145,12 @@ class DashboardController extends Controller
 
     public function handleWalletCallback(Request $request)
     {
+        $request->validate([
+            'trans' => 'nullable|string',
+            'trxref' => 'nullable|string',
+            'reference' => 'required|string|max:255|regex:/^[a-zA-Z0-9_-]+$/',
+        ]);
+        
         $reference = $request->reference;
         
         $response = Http::withHeaders([

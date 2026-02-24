@@ -25,7 +25,7 @@ class WalletController extends Controller
     public function verifyPayment(Request $request)
     {
         $request->validate([
-            'reference' => 'required|string'
+            'reference' => 'required|string|max:255|regex:/^[a-zA-Z0-9_-]+$/'
         ]);
 
         $reference = $request->reference;
