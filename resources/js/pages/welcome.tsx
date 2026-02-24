@@ -3,6 +3,7 @@ import { Head, Link, usePage, useForm } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import PwaInstallBanner from '@/components/PwaInstallBanner';
+import AlertBanner from '@/components/AlertBanner';
 
 interface Product {
     id: number;
@@ -13,11 +14,19 @@ interface Product {
     status: string;
 }
 
-interface WelcomeProps {
-    products: Product[];
+interface Alert {
+    id: number;
+    title: string;
+    message: string;
+    type: 'info' | 'warning' | 'success' | 'error';
 }
 
-export default function Welcome({ products }: WelcomeProps) {
+interface WelcomeProps {
+    products: Product[];
+    alerts?: Alert[];
+}
+
+export default function Welcome({ products, alerts }: WelcomeProps) {
     const { auth } = usePage<SharedData>().props;
     const [scrolled, setScrolled] = useState(false);
     const [navOpen, setNavOpen] = useState(false);
@@ -28,6 +37,7 @@ export default function Welcome({ products }: WelcomeProps) {
     const [trackingResult, setTrackingResult] = useState<any>(null);
     const [isTracking, setIsTracking] = useState(false);
     const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+    const [createOrderResult, setCreateOrderResult] = useState<any>(null);
 
     const { data, setData, post, processing, errors, reset } = useForm({
         product_id: 0,
@@ -67,6 +77,7 @@ export default function Welcome({ products }: WelcomeProps) {
         e.preventDefault();
         setIsTracking(true);
         setTrackingResult(null);
+        setCreateOrderResult(null);
 
         try {
             const response = await axios.post('/guest/track-order', trackingData);
@@ -78,6 +89,27 @@ export default function Welcome({ products }: WelcomeProps) {
             });
         } finally {
             setIsTracking(false);
+        }
+    };
+
+    const handleCreateOrder = async (productId: number) => {
+        setIsCreatingOrder(true);
+        setCreateOrderResult(null);
+
+        try {
+            const response = await axios.post('/guest/create-order-from-reference', {
+                beneficiary_number: trackingData.beneficiary_number,
+                paystack_reference: trackingData.paystack_reference,
+                product_id: productId,
+            });
+            setCreateOrderResult(response.data);
+        } catch (error: any) {
+            setCreateOrderResult({
+                success: false,
+                message: error.response?.data?.message || 'Failed to create order. Please try again.'
+            });
+        } finally {
+            setIsCreatingOrder(false);
         }
     };
 
@@ -104,14 +136,13 @@ export default function Welcome({ products }: WelcomeProps) {
                 <link rel="preconnect" href="https://fonts.bunny.net" />
                 <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600,700,800,900" rel="stylesheet" />
             </Head>
-            
+
             <div className="min-h-screen bg-gradient-to-br from-blue-600 via-cyan-600 to-teal-600 overflow-x-hidden pb-20">
                 {/* Navigation */}
-                <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${
-                    scrolled 
-                        ? 'bg-white/95 backdrop-blur-lg shadow-lg' 
-                        : 'bg-white/90 backdrop-blur-lg'
-                } border-b border-white/20`}>
+                <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled
+                    ? 'bg-white/95 backdrop-blur-lg shadow-lg'
+                    : 'bg-white/90 backdrop-blur-lg'
+                    } border-b border-white/20`}>
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="flex justify-between items-center py-4">
                             <div className="text-2xl font-black bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
@@ -163,7 +194,7 @@ export default function Welcome({ products }: WelcomeProps) {
                             </div>
                         </div>
                         {/* Mobile nav dropdown */}
-                        <div className={`lg:hidden transition-all duration-300 ${navOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'} overflow-hidden`}> 
+                        <div className={`lg:hidden transition-all duration-300 ${navOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'} overflow-hidden`}>
                             <div className="flex flex-col space-y-2 pb-4">
                                 {auth.user ? (
                                     <Link
@@ -205,8 +236,11 @@ export default function Welcome({ products }: WelcomeProps) {
                     </div>
                 </nav>
 
+                {/* Alert Banner System */}
+                <AlertBanner alerts={alerts || []} />
+
                 {/* Track Order Button */}
-                <div className="text-center pt-24 pb-8 px-4 flex gap-4 justify-center items-center">
+                <div className="text-center pt-24 pb-8 px-4 flex flex-wrap gap-4 justify-center items-center">
                     <button
                         onClick={() => {
                             setShowTrackOrderModal(true);
@@ -223,6 +257,15 @@ export default function Welcome({ products }: WelcomeProps) {
                         className="px-6 py-2 text-white font-semibold bg-blue-600 hover:bg-blue-700 transition-colors"
                     >
                         📞 Contact Us
+                    </a>
+                    <a
+                        href="https://youtube.com/shorts/uYZrGg_ojpI?si=0-0ql4_ODj5WG27E"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-6 py-2 text-white font-semibold bg-red-600 hover:bg-red-700 transition-colors flex items-center gap-2"
+                    >
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
+                        How to track your orders
                     </a>
                 </div>
 
@@ -272,7 +315,7 @@ export default function Welcome({ products }: WelcomeProps) {
                                     </svg>
                                 </button>
                             </div>
-                            
+
                             <div className="mb-4 p-4 bg-gray-100 border border-gray-300">
                                 <div className="text-sm text-gray-700 font-semibold">{selectedProduct.network}</div>
                                 <div className="text-lg font-bold text-gray-900">{selectedProduct.name}</div>
@@ -330,6 +373,7 @@ export default function Welcome({ products }: WelcomeProps) {
                                         onClick={() => {
                                             setShowTrackOrderModal(false);
                                             setTrackingResult(null);
+                                            setCreateOrderResult(null);
                                             setTrackingData({ beneficiary_number: '', paystack_reference: '' });
                                         }}
                                         className="inline-flex h-8 w-8 items-center justify-center bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
@@ -360,7 +404,7 @@ export default function Welcome({ products }: WelcomeProps) {
                                                 minLength={10}
                                                 pattern="[0-9]{10}"
                                                 value={trackingData.beneficiary_number}
-                                                onChange={(e) => setTrackingData({...trackingData, beneficiary_number: e.target.value})}
+                                                onChange={(e) => setTrackingData({ ...trackingData, beneficiary_number: e.target.value })}
                                                 placeholder="0XXXXXXXXX"
                                                 className="w-full px-4 py-3 border border-gray-300 focus:border-gray-500 transition-colors"
                                                 required
@@ -371,7 +415,7 @@ export default function Welcome({ products }: WelcomeProps) {
                                             <input
                                                 type="text"
                                                 value={trackingData.paystack_reference}
-                                                onChange={(e) => setTrackingData({...trackingData, paystack_reference: e.target.value})}
+                                                onChange={(e) => setTrackingData({ ...trackingData, paystack_reference: e.target.value })}
                                                 placeholder="Enter your payment reference (starts with 'guest')"
                                                 className="w-full px-4 py-3 border border-gray-300 focus:border-gray-500 transition-colors"
                                                 required
@@ -380,20 +424,21 @@ export default function Welcome({ products }: WelcomeProps) {
                                         </div>
 
                                         <div className="flex flex-col sm:flex-row gap-3">
-                                            <button 
-                                                type="button" 
+                                            <button
+                                                type="button"
                                                 onClick={() => {
                                                     setShowTrackOrderModal(false);
                                                     setTrackingResult(null);
+                                                    setCreateOrderResult(null);
                                                     setTrackingData({ beneficiary_number: '', paystack_reference: '' });
                                                 }}
                                                 className="flex-1 py-3 border border-gray-300 hover:border-gray-400 font-semibold text-gray-700 transition-colors"
                                             >
                                                 Cancel
                                             </button>
-                                            <button 
-                                                type="submit" 
-                                                disabled={isTracking} 
+                                            <button
+                                                type="submit"
+                                                disabled={isTracking}
                                                 className="flex-1 py-3 border border-blue-500 bg-blue-500 text-white font-semibold hover:bg-blue-600 disabled:opacity-50 transition-all"
                                             >
                                                 {isTracking ? '⏳ Searching...' : '🔍 Track Order'}
@@ -429,13 +474,86 @@ export default function Welcome({ products }: WelcomeProps) {
                                                             </svg>
                                                         </div>
                                                         <h4 className="text-lg font-bold text-yellow-800 mb-2">⚠ Order Not Found</h4>
-                                                        <p className="text-yellow-700 mb-4">Your payment was verified but no order exists. You can proceed to create an order.</p>
+                                                        <p className="text-yellow-700 mb-4">Your payment was verified but no order was created. Click below to create your order now.</p>
                                                         <div className="text-left bg-blue-50 p-4 mb-4">
                                                             <p className="text-sm"><strong>Payment Amount:</strong> ₵{trackingResult.payment_data.amount}</p>
                                                             <p className="text-sm"><strong>Email:</strong> {trackingResult.payment_data.email}</p>
                                                             <p className="text-sm"><strong>Date:</strong> {new Date(trackingResult.payment_data.paid_at).toLocaleDateString()}</p>
                                                         </div>
-                                                        <p className="text-sm text-gray-600 text-center">Contact support or an agent to create your order</p>
+                                                        {createOrderResult && (
+                                                            createOrderResult.success ? (
+                                                                <div className="bg-green-50 border border-green-200 p-4 text-center mt-4">
+                                                                    <div className="text-green-700 font-bold mb-2">✅ Order Created Successfully!</div>
+                                                                    <p className="text-sm text-green-800"><strong>Order ID:</strong> #{createOrderResult.order.id}</p>
+                                                                    <p className="text-sm text-green-800"><strong>Product:</strong> {createOrderResult.order.product_name}</p>
+                                                                    <p className="text-sm text-green-800"><strong>Network:</strong> {createOrderResult.order.network}</p>
+                                                                    <p className="text-sm text-green-800"><strong>Status:</strong> <span className="capitalize">{createOrderResult.order.status}</span></p>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="bg-red-50 border border-red-200 p-4 text-center mt-4">
+                                                                    <div className="text-red-700 font-bold mb-1">❌ Failed to Create Order</div>
+                                                                    <p className="text-sm text-red-700">{createOrderResult.message}</p>
+                                                                </div>
+                                                            )
+                                                        )}
+
+                                                        {!createOrderResult?.success && (
+                                                            <div className="mt-4">
+                                                                <p className="text-sm font-bold text-gray-700 mb-3">👇 Click the product to create your order:</p>
+                                                                {(() => {
+                                                                    const paidAmt = Number(trackingResult.payment_data.amount);
+                                                                    const exactMatches = products.filter(p => {
+                                                                        const price = Number(p.price);
+                                                                        return Math.abs(price - paidAmt) <= 0.01 && p.status === 'IN STOCK';
+                                                                    });
+                                                                    const inStockProducts = exactMatches;
+
+                                                                    if (inStockProducts.length === 0) {
+                                                                        return (
+                                                                            <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl text-center">
+                                                                                <p className="text-orange-700 font-semibold text-sm">⚠ No products found matching your payment amount of ₵{paidAmt.toFixed(2)}.</p>
+                                                                                <p className="text-orange-600 text-xs mt-1">Please contact support for assistance.</p>
+                                                                            </div>
+                                                                        );
+                                                                    }
+
+                                                                    return (
+                                                                        <div className="space-y-3">
+                                                                            {inStockProducts.map((product) => (
+                                                                                <div
+                                                                                    key={product.id}
+                                                                                    className="rounded-xl overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.01] border-2 border-green-400 bg-gradient-to-br from-green-50 to-white"
+                                                                                    onClick={() => !isCreatingOrder && handleCreateOrder(product.id)}
+                                                                                >
+                                                                                    <div className="bg-green-500 px-4 py-1.5 text-center">
+                                                                                        <span className="text-white text-xs font-bold tracking-wide">✓ MATCHES YOUR PAYMENT OF ₵{paidAmt.toFixed(2)}</span>
+                                                                                    </div>
+                                                                                    <div className="p-4">
+                                                                                        <div className="flex items-start justify-between mb-3">
+                                                                                            <div>
+                                                                                                <p className="font-bold text-gray-900 text-lg leading-tight">{product.name}</p>
+                                                                                                <p className="text-sm text-gray-500 font-medium mt-0.5">{product.network}</p>
+                                                                                            </div>
+                                                                                            <span className="text-2xl font-black text-green-600">
+                                                                                                ₵{Number(product.price).toFixed(2)}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => { e.stopPropagation(); handleCreateOrder(product.id); }}
+                                                                                            disabled={isCreatingOrder}
+                                                                                            className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all text-base shadow-md"
+                                                                                        >
+                                                                                            {isCreatingOrder ? '⏳ Creating Order...' : '🛒 Create Order'}
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )
                                             ) : (

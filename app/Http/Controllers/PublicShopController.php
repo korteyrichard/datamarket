@@ -243,7 +243,9 @@ class PublicShopController extends Controller
     {
         $request->validate([
             'beneficiary_number' => 'required|string|size:10|regex:/^[0-9]{10}$/',
-            'paystack_reference' => 'required|string|min:10|max:100'
+            'paystack_reference' => 'required|string|min:10|max:100|starts_with:agent'
+        ], [
+            'paystack_reference.starts_with' => 'The provided reference is invalid for this shop. It must start with "agent".'
         ]);
 
         try {
@@ -313,9 +315,11 @@ class PublicShopController extends Controller
     {
         $request->validate([
             'beneficiary_number' => 'required|string|size:10|regex:/^[0-9]{10}$/',
-            'paystack_reference' => 'required|string|min:10|max:100',
+            'paystack_reference' => 'required|string|min:10|max:100|starts_with:agent',
             'product_id' => 'required|exists:products,id',
             'agent_username' => 'required|string|exists:agent_shops,username'
+        ], [
+            'paystack_reference.starts_with' => 'The provided reference is invalid for this shop. It must start with "agent".'
         ]);
 
         try {

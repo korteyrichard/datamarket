@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\Order;
+use App\Models\Alert;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -16,9 +17,11 @@ class GuestPurchaseController extends Controller
     public function index()
     {
         $products = Product::forCustomers()->inStock()->get();
-        
+        $alerts = Alert::active()->latest()->get();
+
         return Inertia::render('welcome', [
-            'products' => $products
+            'products' => $products,
+            'alerts' => $alerts
         ]);
     }
 
@@ -109,7 +112,8 @@ class GuestPurchaseController extends Controller
 
         if (stripos($network, 'mtn') !== false) {
             $orderPusher = new OrderPusherService();
-        } else {
+        }
+        else {
             $orderPusher = new CodeCraftOrderPusherService();
         }
 
@@ -121,7 +125,7 @@ class GuestPurchaseController extends Controller
     public function orderSuccess($orderId)
     {
         $order = Order::with('products')->findOrFail($orderId);
-        
+
         return Inertia::render('GuestOrderSuccess', [
             'order' => $order
         ]);
@@ -131,16 +135,18 @@ class GuestPurchaseController extends Controller
     {
         $request->validate([
             'beneficiary_number' => 'required|string|size:10|regex:/^[0-9]{10}$/',
-            'paystack_reference' => 'required|string|min:10|max:100'
+            'paystack_reference' => 'required|string|starts_with:guest|min:10|max:100'
+        ], [
+            'paystack_reference.starts_with' => 'Only guest order references are allowed in this tracking tool.'
         ]);
 
         try {
             // First, try to find existing guest order by phone and reference
             $order = Order::where('customer_phone', $request->beneficiary_number)
-                         ->where('paystack_reference', $request->paystack_reference)
-                         ->select('id', 'status', 'total', 'network', 'customer_email', 'customer_phone', 'created_at')
-                         ->with(['products:id,name,description,network'])
-                         ->first();
+                ->where('paystack_reference', $request->paystack_reference)
+                ->select('id', 'status', 'total', 'network', 'customer_email', 'customer_phone', 'created_at')
+                ->with(['products:id,name,description,network'])
+                ->first();
 
             if ($order) {
                 return response()->json([
@@ -154,13 +160,13 @@ class GuestPurchaseController extends Controller
                         'network' => $order->network,
                         'customer_email' => $order->customer_email,
                         'created_at' => $order->created_at->format('Y-m-d H:i:s'),
-                        'products' => $order->products->map(function($product) {
-                            return [
+                        'products' => $order->products->map(function ($product) {
+                    return [
                                 'name' => $product->name,
                                 'description' => $product->description,
                                 'network' => $product->network
                             ];
-                        })
+                })
                     ]
                 ]);
             }
@@ -176,14 +182,17 @@ class GuestPurchaseController extends Controller
                 ]);
             }
 
+            $paidAmount = $verification['data']['amount'];
+
             return response()->json([
-                'success' => true,
-                'order_found' => false,
+                'success'        => true,
+                'order_found'    => false,
                 'can_create_order' => true,
-                'payment_data' => $verification['data']
+                'payment_data'   => $verification['data'],
             ]);
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Order tracking error', [
                 'beneficiary_number' => $request->beneficiary_number,
                 'reference' => $request->paystack_reference,
@@ -201,12 +210,29 @@ class GuestPurchaseController extends Controller
     {
         $request->validate([
             'beneficiary_number' => 'required|string|size:10|regex:/^[0-9]{10}$/',
-            'paystack_reference' => 'required|string|min:10|max:100',
+            'paystack_reference' => 'required|string|starts_with:guest|min:10|max:100',
             'product_id' => 'required|exists:products,id',
+        ], [
+            'paystack_reference.starts_with' => 'Only guest order references are allowed in this tracking tool.'
         ]);
 
         try {
-            // Verify payment again to ensure security
+            // Prevent duplicate orders
+            $existingOrder = Order::where('paystack_reference', $request->paystack_reference)->first();
+            if ($existingOrder) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'An order for this payment reference already exists.',
+                    'order' => [
+                        'id' => $existingOrder->id,
+                        'status' => $existingOrder->status,
+                        'total' => $existingOrder->total,
+                        'network' => $existingOrder->network,
+                    ]
+                ], 409);
+            }
+
+            // Verify payment with Paystack
             $paystackService = new \App\Services\PaystackService();
             $verification = $paystackService->verifyReference($request->paystack_reference);
 
@@ -217,29 +243,30 @@ class GuestPurchaseController extends Controller
                 ]);
             }
 
-            $product = Product::findOrFail($request->product_id);
+            $paidAmount = $verification['data']['amount'];
 
-            if ($product->status !== 'IN STOCK') {
+            $product = Product::forCustomers()
+                             ->inStock()
+                             ->where('id', $request->product_id)
+                             ->first();
+
+            if (!$product) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Product is no longer in stock'
+                    'message' => 'Product not found or out of stock'
                 ]);
             }
 
-            // Verify payment amount matches product price (allow 1 pesewa difference for rounding)
-            $expectedAmount = $product->price;
-            $paidAmount = $verification['data']['amount'];
-            
-            if (abs($paidAmount - $expectedAmount) > 0.01) {
+            if (abs($product->price - $paidAmount) > 0.01) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment amount does not match product price'
+                    'message' => "Payment amount (₵{$paidAmount}) does not match product price (₵{$product->price})"
                 ]);
             }
 
             \DB::beginTransaction();
 
-            // Extract GB amount from product name
+            // Extract numeric quantity from product name (e.g. "2GB" → 2)
             preg_match('/\d+/', $product->name, $matches);
             $quantity = isset($matches[0]) ? (int)$matches[0] : 1;
 
@@ -259,7 +286,7 @@ class GuestPurchaseController extends Controller
             $order->products()->attach($product->id, [
                 'quantity' => $quantity,
                 'price' => $product->price,
-                'beneficiary_number' => $request->beneficiary_number
+                'beneficiary_number' => $request->beneficiary_number,
             ]);
 
             \DB::commit();
@@ -267,20 +294,30 @@ class GuestPurchaseController extends Controller
             // Push order to external API based on network
             try {
                 $network = strtolower($order->network ?? '');
-                
+
                 if (stripos($network, 'mtn') !== false) {
                     $orderPusher = new OrderPusherService();
-                } else {
+                }
+                else {
                     $orderPusher = new CodeCraftOrderPusherService();
                 }
-                
+
                 $orderPusher->pushOrderToApi($order);
-            } catch (\Exception $e) {
+            }
+            catch (\Exception $e) {
                 \Illuminate\Support\Facades\Log::error('Failed to push guest order to external API', [
                     'order_id' => $order->id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
+
+            \Illuminate\Support\Facades\Log::info('Guest order created from reference', [
+                'order_id' => $order->id,
+                'reference' => $request->paystack_reference,
+                'product' => $product->name,
+                'amount' => $product->price,
+                'beneficiary' => $request->beneficiary_number,
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -289,19 +326,21 @@ class GuestPurchaseController extends Controller
                     'id' => $order->id,
                     'status' => $order->status,
                     'total' => $order->total,
-                    'beneficiary_number' => $order->beneficiary_number,
-                    'network' => $order->network
+                    'beneficiary_number' => $order->customer_phone,
+                    'network' => $order->network,
+                    'product_name' => $product->name,
                 ]
             ]);
-            
-        } catch (\Exception $e) {
+
+        }
+        catch (\Exception $e) {
             \DB::rollBack();
-            
-            \Illuminate\Support\Facades\Log::error('Failed to create order from reference', [
+
+            \Illuminate\Support\Facades\Log::error('Failed to create guest order from reference', [
                 'reference' => $request->paystack_reference,
                 'beneficiary_number' => $request->beneficiary_number,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
