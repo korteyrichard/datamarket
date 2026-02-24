@@ -85,7 +85,11 @@ class DashboardController extends Controller
     public function addToWallet(Request $request)
     {
         $request->validate([
-            'amount' => 'required|numeric|min:1',
+            'amount' => 'required|numeric|min:1|max:100000',
+        ], [
+            'amount.min' => 'The minimum top-up amount is GHS 1.00',
+            'amount.max' => 'The maximum top-up amount per transaction is GHS 100,000.00',
+            'amount.numeric' => 'Please enter a valid number for the amount',
         ]);
 
         $user = auth()->user();

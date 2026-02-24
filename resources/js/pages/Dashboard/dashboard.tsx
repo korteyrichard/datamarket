@@ -63,7 +63,6 @@ export default function Dashboard({ auth }: DashboardProps) {
   const { products, cartCount, cartItems, walletBalance: initialWalletBalance, orders, alerts } = usePage<DashboardProps>().props;
 
   const [walletBalance, setWalletBalance] = useState(initialWalletBalance ?? 0);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [addAmount, setAddAmount] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -71,7 +70,7 @@ export default function Dashboard({ auth }: DashboardProps) {
   const [activeTab, setActiveTab] = useState('MTN');
 
   const networkTabs = ['MTN', 'TELECEL', 'AT Data (Instant)', 'AT (Big Packages)'];
-  
+
   // Fix filteredPackages typing and prop usage
   const filteredPackages = products.filter(pkg => pkg.network === activeTab);
 
@@ -88,122 +87,62 @@ export default function Dashboard({ auth }: DashboardProps) {
     >
       <Head title="Dashboard" />
 
-      {/* Wallet Add Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-xs relative border border-gray-200 dark:border-gray-700">
-            <button
-              className="absolute top-2 right-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-2xl"
-              onClick={() => setShowAddModal(false)}
-              aria-label="Close"
-            >
-              &times;
-            </button>
-            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Add to Wallet</h3>
-            <form
-              className="flex flex-col gap-3"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setIsAdding(true);
-                setAddError(null);
-                try {
-                  const response = await axios.post('/dashboard/wallet/add', { amount: addAmount });
-                  const data = response.data;
-                  if (data.success && data.payment_url) {
-                    // Redirect to Paystack payment page
-                    window.location.href = data.payment_url;
-                  } else {
-                    setAddError(data.message || 'Failed to initialize payment.');
-                  }
-                } catch (err: any) {
-                  const errorMessage = err.response?.data?.message || 'Error initializing payment.';
-                  setAddError(errorMessage);
-                } finally {
-                  setIsAdding(false);
-                }
-              }}
-            >
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                className="rounded px-2 py-2 w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
-                placeholder="Amount"
-                value={addAmount}
-                onChange={e => setAddAmount(e.target.value)}
-                required
-                disabled={isAdding}
-                autoFocus
-              />
-              <button
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-semibold"
-                disabled={isAdding || !addAmount}
-              >
-                {isAdding ? 'Processing...' : 'Top Up'}
-              </button>
-              {addError && <p className="text-red-500 text-xs mt-1">{addError}</p>}
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Alert Popup Overlay */}
       <AlertBanner alerts={alerts || []} />
-      
+
       <div className="py-6 sm:py-8 lg:py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Action Buttons Section */}
           {auth.user.role === 'customer' && (
-          <div className='w-full mb-6 sm:mb-10'>
-                   <Link
-                      href={route('become-a-dealer')}
-                      className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-gray-700 font-medium rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 hover:text-white hover:-translate-y-0.5 transition-all duration-300"
-                    >
-                      Become a Dealer
-                    </Link>
-              </div>)
-           }
-           
-           {/* Agent/Dealer Action Buttons */}
-           {auth.user.role === 'agent' && (
-           <div className='w-full mb-6 sm:mb-10'>
-                   <Link
-                      href={route('become-a-dealer')}
-                      className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-white font-medium rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 hover:-translate-y-0.5 transition-all duration-300"
-                    >
-                      Become a Dealer
-                    </Link>
-              </div>)
-           }
-           
-           {/* Dealer Dashboard Link */}
-           {auth.user.role === 'dealer' && (
-           <div className='w-full mb-6 sm:mb-10'>
-                   <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                     <Link
-                        href={route('dealer.dashboard')}
-                        className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-white font-medium rounded-full bg-gradient-to-r from-green-600 to-emerald-600 hover:bg-gradient-to-r hover:from-emerald-600 hover:to-green-600 hover:-translate-y-0.5 transition-all duration-300"
-                      >
-                        Dealer Dashboard
-                      </Link>
-                      {auth.user.agent_shop && (
-                        <Link
-                          href={`/shop/${auth.user.agent_shop.username}`}
-                          className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-gray-700 font-medium rounded-full bg-gradient-to-r from-blue-600 to-purple-600 hover:bg-gradient-to-r hover:from-purple-600 hover:to-blue-600 hover:text-white hover:-translate-y-0.5 transition-all duration-300"
-                        >
-                          View My Shop
-                        </Link>
-                      )}
-                   </div>
-              </div>)
-           }
+            <div className='w-full mb-6 sm:mb-10'>
+              <Link
+                href={route('become-a-dealer')}
+                className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-gray-700 font-medium rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 hover:text-white hover:-translate-y-0.5 transition-all duration-300"
+              >
+                Become a Dealer
+              </Link>
+            </div>)
+          }
+
+          {/* Agent/Dealer Action Buttons */}
+          {auth.user.role === 'agent' && (
+            <div className='w-full mb-6 sm:mb-10'>
+              <Link
+                href={route('become-a-dealer')}
+                className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-white font-medium rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 hover:-translate-y-0.5 transition-all duration-300"
+              >
+                Become a Dealer
+              </Link>
+            </div>)
+          }
+
+          {/* Dealer Dashboard Link */}
+          {auth.user.role === 'dealer' && (
+            <div className='w-full mb-6 sm:mb-10'>
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                <Link
+                  href={route('dealer.dashboard')}
+                  className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-white font-medium rounded-full bg-gradient-to-r from-green-600 to-emerald-600 hover:bg-gradient-to-r hover:from-emerald-600 hover:to-green-600 hover:-translate-y-0.5 transition-all duration-300"
+                >
+                  Dealer Dashboard
+                </Link>
+                {auth.user.agent_shop && (
+                  <Link
+                    href={`/shop/${auth.user.agent_shop.username}`}
+                    className="inline-block w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 text-center text-gray-700 font-medium rounded-full bg-gradient-to-r from-blue-600 to-purple-600 hover:bg-gradient-to-r hover:from-purple-600 hover:to-blue-600 hover:text-white hover:-translate-y-0.5 transition-all duration-300"
+                  >
+                    View My Shop
+                  </Link>
+                )}
+              </div>
+            </div>)
+          }
 
           {/* Stats Cards Section */}
           <div className="mb-8 sm:mb-10">
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
               {/* Wallet Balance Card - Featured */}
-              <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 rounded-xl p-4 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 hover:scale-105">
+              <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 rounded-xl p-4 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-semibold uppercase tracking-wide opacity-90">Wallet Balance</p>
                   <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -212,19 +151,64 @@ export default function Dashboard({ auth }: DashboardProps) {
                     </svg>
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-2xl font-bold">GHS {walletBalance}</p>
-                  <button
-                    className="w-12 h-12 bg-white/40 hover:bg-white/50 transition-all duration-200 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-110"
-                    onClick={() => setShowAddModal(true)}
-                    aria-label="Add to wallet"
-                    title="Add funds to wallet"
+                <div className="space-y-3">
+                  <p className="text-2xl font-bold text-center mb-1">GHS {walletBalance}</p>
+
+                  <form
+                    className="flex flex-col gap-2"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setIsAdding(true);
+                      setAddError(null);
+                      try {
+                        const response = await axios.post('/dashboard/wallet/add', { amount: addAmount });
+                        const data = response.data;
+                        if (data.success && data.payment_url) {
+                          window.location.href = data.payment_url;
+                        } else {
+                          setAddError(data.message || 'Failed to initialize payment.');
+                        }
+                      } catch (err: any) {
+                        const errorMessage = err.response?.data?.message || 'Error initializing payment.';
+                        setAddError(errorMessage);
+                      } finally {
+                        setIsAdding(false);
+                      }
+                    }}
                   >
-                    <span className="text-2xl font-bold">+</span>
-                  </button>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="1.00"
+                        step="0.01"
+                        className="rounded px-2 py-1.5 w-full border-none bg-white text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-white/50 text-sm font-medium"
+                        placeholder="Amount"
+                        value={addAmount}
+                        onChange={e => setAddAmount(e.target.value)}
+                        required
+                        disabled={isAdding}
+                      />
+                      <button
+                        type="submit"
+                        className="w-10 h-9 bg-white text-emerald-600 hover:bg-white/90 transition-all duration-200 rounded-lg flex items-center justify-center shadow-md disabled:opacity-50"
+                        disabled={isAdding || !addAmount}
+                        title="Top Up"
+                      >
+                        {isAdding ? (
+                          <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <span className="text-xl font-bold">+</span>
+                        )}
+                      </button>
+                    </div>
+                    {addError && <p className="text-white text-[10px] mt-1 bg-red-500 p-1.5 rounded leading-tight shadow-sm font-semibold">{addError}</p>}
+                  </form>
                 </div>
               </div>
-              
+
 
               {/* Total Orders Card */}
               <div className="bg-gradient-to-br from-purple-500 via-violet-500 to-indigo-500 rounded-xl p-4 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 hover:scale-105">
