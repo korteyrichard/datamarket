@@ -39,7 +39,7 @@ class GuestPurchaseController extends Controller
             return back()->with('error', 'Product is out of stock');
         }
 
-        $reference = 'guest_' . Str::random(16);
+        $reference = 'guest_' . Str::random(10) . '_' . $request->beneficiary_number;
 
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . config('paystack.secret_key'),

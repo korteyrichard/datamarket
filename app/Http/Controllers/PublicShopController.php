@@ -88,7 +88,7 @@ class PublicShopController extends Controller
         }
 
         $total = $agentProduct->agent_price; // Don't multiply by quantity for data bundles
-        $reference = 'agent_order_' . \Illuminate\Support\Str::random(16);
+        $reference = 'agent_order_' . \Illuminate\Support\Str::random(10) . '_' . $request->beneficiary_number;
         $customerPhone = $request->customer_phone ?? $request->beneficiary_number;
         
         // Store order data in session for payment callback
