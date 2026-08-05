@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Services\CommissionService;
 use App\Services\CodeCraftOrderStatusSyncService;
+use App\Services\CodeCraftMtnOrderStatusSyncService;
+use App\Services\DataFlowOrderStatusSyncService;
 
 class OrderStatusSyncService
 {
@@ -14,6 +16,8 @@ class OrderStatusSyncService
     private $moolreSmsService;
     private $commissionService;
     private $codeCraftSyncService;
+    private $codeCraftMtnSyncService;
+    private $dataFlowSyncService;
 
     public function __construct()
     {
@@ -21,6 +25,8 @@ class OrderStatusSyncService
         $this->moolreSmsService = new SmsService();
         $this->commissionService = new CommissionService();
         $this->codeCraftSyncService = new CodeCraftOrderStatusSyncService();
+        $this->codeCraftMtnSyncService = new CodeCraftMtnOrderStatusSyncService();
+        $this->dataFlowSyncService = new DataFlowOrderStatusSyncService();
     }
 
     public function syncOrderStatuses()
@@ -38,6 +44,12 @@ class OrderStatusSyncService
         
         // Sync CodeCraft orders (Telecel, AT Data, AT Big Packages)
         $this->codeCraftSyncService->syncOrderStatuses();
+        
+        // Sync CodeCraft MTN orders
+        $this->codeCraftMtnSyncService->syncOrderStatuses();
+        
+        // Sync DataFlow MTN orders
+        $this->dataFlowSyncService->syncOrderStatuses();
     }
 
     private function syncJaybartOrderStatus($order)

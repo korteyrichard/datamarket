@@ -57,8 +57,13 @@ interface AdminOrdersPageProps {
   auth: any;
   filterNetwork: string;
   filterStatus: string;
+  filterApiStatus: string;
   searchOrderId: string;
   searchBeneficiaryNumber: string;
+  searchEmail: string;
+  filterDateFrom: string;
+  filterDateTo: string;
+  allNetworks: string[];
   dailySales: number;
   dailyCommissions: number;
   [key: string]: any;
@@ -70,8 +75,13 @@ export default function AdminOrders() {
     auth,
     filterNetwork: initialNetworkFilter,
     filterStatus: initialStatusFilter,
+    filterApiStatus: initialApiStatusFilter,
     searchOrderId,
     searchBeneficiaryNumber,
+    searchEmail,
+    filterDateFrom,
+    filterDateTo,
+    allNetworks,
     dailySales,
     dailyCommissions,
   } = usePage<AdminOrdersPageProps>().props;
@@ -79,23 +89,31 @@ export default function AdminOrders() {
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
   const [networkFilter, setNetworkFilter] = useState(initialNetworkFilter);
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
+  const [apiStatusFilter, setApiStatusFilter] = useState(initialApiStatusFilter);
   const [orderIdSearch, setOrderIdSearch] = useState(searchOrderId);
   const [beneficiarySearch, setBeneficiarySearch] = useState(searchBeneficiaryNumber);
+  const [emailSearch, setEmailSearch] = useState(searchEmail);
+  const [dateFrom, setDateFrom] = useState(filterDateFrom);
+  const [dateTo, setDateTo] = useState(filterDateTo);
   const [selectedOrders, setSelectedOrders] = useState<number[]>([]);
   const [bulkStatus, setBulkStatus] = useState('');
+  const [retryingOrders, setRetryingOrders] = useState<number[]>([]);
 
-  const networks = Array.from(new Set(orders.data.map(o => o.network).filter(Boolean)));
+  const getCurrentParams = () => ({
+    ...(orderIdSearch && { order_id: orderIdSearch }),
+    ...(beneficiarySearch && { beneficiary_number: beneficiarySearch }),
+    ...(emailSearch && { email: emailSearch }),
+    ...(networkFilter && { network: networkFilter }),
+    ...(statusFilter && { status: statusFilter }),
+    ...(apiStatusFilter && { api_status: apiStatusFilter }),
+    ...(dateFrom && { date_from: dateFrom }),
+    ...(dateTo && { date_to: dateTo }),
+  });
 
-  const handleFilterChange = (filterName: string, value: string) => {
-    const params: Record<string, string | undefined> = {};
-    params[filterName] = value || undefined;
-    
-    if (filterName === 'network') {
-      setNetworkFilter(value);
-    } else if (filterName === 'status') {
-      setStatusFilter(value);
-    }
-    
+  const applyFilter = (overrides: Record<string, string | undefined> = {}) => {
+    const params = { ...getCurrentParams(), ...overrides };
+    // Remove undefined/empty values
+    Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
     router.get(route('admin.orders'), params, { preserveState: true, replace: true });
   };
 
@@ -169,13 +187,31 @@ export default function AdminOrders() {
     });
   };
 
+  const handleRetryOrder = (orderId: number) => {
+    setRetryingOrders(prev => [...prev, orderId]);
+    router.post(route('admin.orders.retry', orderId), {}, {
+      onFinish: () => setRetryingOrders(prev => prev.filter(id => id !== orderId)),
+    });
+  };
+
+  const handleBulkRetry = () => {
+    const retryable = selectedOrders.filter(id => {
+      const order = orders.data.find(o => o.id === id);
+      return order && order.status === 'processing' && (order.api_status === 'failed' || order.api_status === 'disabled');
+    });
+    if (retryable.length === 0) return alert('No retryable orders selected (must be processing + failed/disabled).');
+    router.post(route('admin.orders.bulkRetry'), { order_ids: retryable }, {
+      onSuccess: () => setSelectedOrders([]),
+    });
+  };
+
   return (
     <AdminLayout
       user={auth?.user}
       header={<h2 className="text-3xl font-bold text-gray-800 dark:text-white">Orders</h2>}
     >
       <Head title="Admin Orders" />
-      <div className="max-w-6xl mx-auto py-10 px-2 sm:px-4">
+      <div className="max-w-full xl:max-w-[1400px] mx-auto py-10 px-2 sm:px-6">
         {/* Daily Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
@@ -232,6 +268,12 @@ export default function AdminOrders() {
                   Update
                 </button>
                 <button
+                  onClick={handleBulkRetry}
+                  className="px-4 py-1.5 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700"
+                >
+                  Retry Push
+                </button>
+                <button
                   onClick={() => {
                     const form = document.createElement('form');
                     form.method = 'POST';
@@ -275,12 +317,7 @@ export default function AdminOrders() {
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
                 placeholder="Enter order ID"
                 value={orderIdSearch}
-                onChange={e => {
-                  setOrderIdSearch(e.target.value);
-                  router.get(route('admin.orders'), {
-                    order_id: e.target.value || undefined
-                  }, { preserveState: true, replace: true });
-                }}
+                onChange={e => { setOrderIdSearch(e.target.value); applyFilter({ order_id: e.target.value || undefined }); }}
               />
             </div>
             <div>
@@ -290,12 +327,17 @@ export default function AdminOrders() {
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
                 placeholder="Enter beneficiary number"
                 value={beneficiarySearch}
-                onChange={e => {
-                  setBeneficiarySearch(e.target.value);
-                  router.get(route('admin.orders'), {
-                    beneficiary_number: e.target.value || undefined
-                  }, { preserveState: true, replace: true });
-                }}
+                onChange={e => { setBeneficiarySearch(e.target.value); applyFilter({ beneficiary_number: e.target.value || undefined }); }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search by Email</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
+                placeholder="Enter email"
+                value={emailSearch}
+                onChange={e => { setEmailSearch(e.target.value); applyFilter({ email: e.target.value || undefined }); }}
               />
             </div>
             <div>
@@ -303,10 +345,10 @@ export default function AdminOrders() {
               <select
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
                 value={networkFilter}
-                onChange={(e) => handleFilterChange('network', e.target.value)}
+                onChange={e => { setNetworkFilter(e.target.value); applyFilter({ network: e.target.value || undefined }); }}
               >
                 <option value="">All Networks</option>
-                {networks.map(network => (
+                {allNetworks.map(network => (
                   <option key={network} value={network}>{network}</option>
                 ))}
               </select>
@@ -316,7 +358,7 @@ export default function AdminOrders() {
               <select
                 className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
                 value={statusFilter}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
+                onChange={e => { setStatusFilter(e.target.value); applyFilter({ status: e.target.value || undefined }); }}
               >
                 <option value="">All Statuses</option>
                 <option value="pending">Pending</option>
@@ -324,6 +366,37 @@ export default function AdminOrders() {
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Filter by API Status</label>
+              <select
+                className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
+                value={apiStatusFilter}
+                onChange={e => { setApiStatusFilter(e.target.value); applyFilter({ api_status: e.target.value || undefined }); }}
+              >
+                <option value="">All API Statuses</option>
+                <option value="failed">Failed</option>
+                <option value="success">Success</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date From</label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
+                value={dateFrom}
+                onChange={e => { setDateFrom(e.target.value); applyFilter({ date_from: e.target.value || undefined }); }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date To</label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white shadow-sm focus:ring focus:ring-blue-500 text-sm"
+                value={dateTo}
+                onChange={e => { setDateTo(e.target.value); applyFilter({ date_to: e.target.value || undefined }); }}
+              />
             </div>
           </div>
         </div>
@@ -335,7 +408,7 @@ export default function AdminOrders() {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl shadow-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-            <table className="min-w-[600px] w-full text-sm text-left text-gray-700 dark:text-gray-300">
+            <table className="w-full text-sm text-left text-gray-700 dark:text-gray-300">
               <thead className="uppercase text-xs bg-gray-100 dark:bg-gray-700 dark:text-gray-300">
                 <tr>
                   <th className="px-3 sm:px-5 py-3 sm:py-4 w-12">
@@ -414,6 +487,15 @@ export default function AdminOrders() {
                         >
                           {expandedOrder === order.id ? 'Hide' : 'Details'}
                         </button>
+                        {(order.api_status === 'failed' || order.api_status === 'disabled') && order.status === 'processing' && (
+                          <button
+                            onClick={() => handleRetryOrder(order.id)}
+                            disabled={retryingOrders.includes(order.id)}
+                            className="text-orange-500 hover:underline text-xs sm:text-sm disabled:opacity-50"
+                          >
+                            {retryingOrders.includes(order.id) ? 'Retrying...' : 'Retry'}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteOrder(order.id)}
                           className="text-red-500 hover:underline text-xs sm:text-sm"

@@ -1,16 +1,47 @@
-import React from "react";
+import React, { useState } from "react";
 import { AdminLayout } from "../../layouts/admin-layout";
 import { Button } from "@/components/ui/button";
 import { PageProps, User, Transaction } from '@/types';
 import { ArrowLeft, Calendar, DollarSign, FileText } from "lucide-react";
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
+import Pagination from '@/components/pagination';
+
+interface PaginatedTransactions {
+  data: Transaction[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number;
+  to: number;
+  links: Array<{ url: string | null; label: string; active: boolean }>;
+}
 
 interface UserTransactionsPageProps extends PageProps {
   user: User;
-  transactions: Transaction[];
+  transactions: PaginatedTransactions;
+  filterType: string;
+  filterDateFrom: string;
+  filterDateTo: string;
 }
 
-const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPageProps) => {
+const UserTransactionsPage = ({ auth, user, transactions, filterType: initType, filterDateFrom: initFrom, filterDateTo: initTo }: UserTransactionsPageProps) => {
+  const [filterType, setFilterType] = useState(initType);
+  const [dateFrom, setDateFrom] = useState(initFrom);
+
+  const applyFilters = () => {
+    const params: Record<string, string> = {};
+    if (filterType) params.type = filterType;
+    if (dateFrom) params.date_from = dateFrom;
+    router.get(route('admin.users.transactions', user.id), params, { preserveState: true, replace: true });
+  };
+
+  const resetFilters = () => {
+    setFilterType('');
+    setDateFrom('');
+    router.get(route('admin.users.transactions', user.id), {}, { preserveState: true, replace: true });
+  };
+
   const getStatusBadge = (status: string) => {
     const statusClasses = {
       completed: "bg-green-100 text-green-800",
@@ -18,8 +49,6 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
       failed: "bg-red-100 text-red-800",
       cancelled: "bg-gray-100 text-gray-800",
     };
-    
-  
     return (
       <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusClasses[status as keyof typeof statusClasses] || 'bg-gray-100 text-gray-800'}`}>
         {status}
@@ -34,7 +63,6 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
       agent_fee: "bg-orange-100 text-orange-800",
       refund: "bg-green-100 text-green-800",
     };
-    
     return (
       <span className={`px-2 py-1 text-xs font-medium rounded-full ${typeClasses[type as keyof typeof typeClasses] || 'bg-gray-100 text-gray-800'}`}>
         {type.replace('_', ' ')}
@@ -94,9 +122,9 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
               <FileText className="w-4 h-4 text-blue-600" />
             </div>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{transactions.length}</p>
+          <p className="text-2xl font-bold text-gray-900">{transactions.total}</p>
         </div>
-        
+
         <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Amount</h3>
@@ -105,10 +133,10 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
             </div>
           </div>
           <p className="text-2xl font-bold text-gray-900">
-            ₵{transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0).toFixed(2)}
+            ₵{transactions.data.reduce((sum, t) => sum + parseFloat(t.amount), 0).toFixed(2)}
           </p>
         </div>
-        
+
         <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Completed Amount</h3>
@@ -117,9 +145,34 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
             </div>
           </div>
           <p className="text-2xl font-bold text-gray-900">
-            ₵{transactions.filter(t => t.status === 'completed').reduce((sum, t) => sum + parseFloat(t.amount), 0).toFixed(2)}
+            ₵{transactions.data.filter(t => t.status === 'completed').reduce((sum, t) => sum + parseFloat(t.amount), 0).toFixed(2)}
           </p>
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <select
+          className="border rounded px-3 py-2 w-full sm:w-48 text-sm"
+          value={filterType}
+          onChange={e => setFilterType(e.target.value)}
+        >
+          <option value="">All Types</option>
+          <option value="topup">Wallet Top Up</option>
+          <option value="order">Order Purchase</option>
+          <option value="agent_fee">Agent Fee</option>
+          <option value="refund">Refund</option>
+          <option value="credit">Admin Credit</option>
+          <option value="debit">Admin Debit</option>
+        </select>
+        <input
+          type="date"
+          className="border rounded px-3 py-2 w-full sm:w-40 text-sm"
+          value={dateFrom}
+          onChange={e => setDateFrom(e.target.value)}
+        />
+        <button onClick={applyFilters} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">Search</button>
+        <button onClick={resetFilters} className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">Reset</button>
       </div>
 
       {/* Transactions Table */}
@@ -127,8 +180,8 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-medium text-gray-900">Transaction History</h3>
         </div>
-        
-        {transactions.length > 0 ? (
+
+        {transactions.data.length > 0 ? (
           <>
             {/* Desktop Table */}
             <div className="hidden md:block overflow-x-auto">
@@ -144,7 +197,7 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {transactions.map((transaction) => (
+                  {transactions.data.map((transaction) => (
                     <tr key={transaction.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {new Date(transaction.created_at).toLocaleDateString()}
@@ -172,7 +225,7 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
 
             {/* Mobile Cards */}
             <div className="md:hidden divide-y divide-gray-200">
-              {transactions.map((transaction) => (
+              {transactions.data.map((transaction) => (
                 <div key={transaction.id} className="p-4">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex flex-col">
@@ -201,6 +254,8 @@ const UserTransactionsPage = ({ auth, user, transactions }: UserTransactionsPage
           </div>
         )}
       </div>
+
+      <Pagination data={transactions} />
     </AdminLayout>
   );
 };

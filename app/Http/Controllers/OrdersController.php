@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use App\Services\OrderPusherService;
 use App\Services\CodeCraftOrderPusherService;
+use App\Services\CodeCraftMtnOrderPusherService;
+use App\Services\DataFlowOrderPusherService;
+use App\Models\Setting;
 
 class OrdersController extends Controller
 {
@@ -111,24 +114,19 @@ class OrdersController extends Controller
         DB::beginTransaction();
         Log::info('Database transaction started.');
         try {
-            // Deduct wallet balance (use bcsub for decimal math and cast to float for decimal:2)
-            Log::info('About to deduct wallet balance', [
-                'current_balance' => $user->wallet_balance,
-                'total_to_deduct' => $total,
-                'balance_type' => gettype($user->wallet_balance),
-                'total_type' => gettype($total)
-            ]);
-            
+            // Lock the user row to prevent concurrent balance manipulation
+            $user = \App\Models\User::where('id', $user->id)->lockForUpdate()->first();
+
+            // Re-check balance after acquiring lock
+            if ($user->wallet_balance < $total) {
+                DB::rollBack();
+                return redirect()->back()->with('error', 'Insufficient wallet balance. Top up to proceed with the purchase.');
+            }
+
+            // Deduct wallet balance atomically
             $newBalance = bcsub((string) $user->wallet_balance, (string) $total, 2);
-            Log::info('New balance calculated', ['new_balance' => $newBalance]);
-            
             $user->wallet_balance = (float) $newBalance;
-            $saveResult = $user->save();
-            Log::info('Wallet balance deducted.', [
-                'userId' => $user->id, 
-                'newWalletBalance' => $user->wallet_balance,
-                'save_result' => $saveResult
-            ]);
+            $user->save();
 
             // Get beneficiary_number from the first cart item (assuming all items have the same number)
             $beneficiaryNumber = $cartItems->first()->beneficiary_number ?? null;
@@ -192,14 +190,18 @@ class OrdersController extends Controller
             try {
                 $productName = strtolower($order->products->first()->name ?? '');
                 
-                // Route to CodeCraft for Telecel, AT Data (Instant), and AT (Big Packages)
                 if (stripos($productName, 'telecel') !== false || 
                     stripos($productName, 'at data') !== false || 
                     stripos($productName, 'at (big packages)') !== false) {
                     $orderPusher = new CodeCraftOrderPusherService();
                     Log::info('Routing order to CodeCraft API', ['order_id' => $order->id, 'product' => $productName]);
+                } elseif (stripos($productName, 'mtn') !== false && Setting::get('dataflow_mtn_api_enabled', 'false') === 'true') {
+                    $orderPusher = new DataFlowOrderPusherService();
+                    Log::info('Routing MTN order to DataFlow API', ['order_id' => $order->id, 'product' => $productName]);
+                } elseif (stripos($productName, 'mtn') !== false && Setting::get('codecraft_mtn_api_enabled', 'false') === 'true') {
+                    $orderPusher = new CodeCraftMtnOrderPusherService();
+                    Log::info('Routing MTN order to CodeCraft MTN API', ['order_id' => $order->id, 'product' => $productName]);
                 } else {
-                    // MTN goes through OrderPusherService
                     $orderPusher = new OrderPusherService();
                     Log::info('Routing order to OrderPusher API', ['order_id' => $order->id, 'product' => $productName]);
                 }

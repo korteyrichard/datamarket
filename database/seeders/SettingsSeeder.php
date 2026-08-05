@@ -13,5 +13,10 @@ class SettingsSeeder extends Seeder
             ['key' => 'api_enabled'],
             ['value' => 'true']
         );
+
+        Setting::updateOrCreate(
+            ['key' => 'codecraft_mtn_api_enabled'],
+            ['value' => 'false']
+        );
     }
 }

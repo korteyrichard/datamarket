@@ -42,6 +42,7 @@ interface AdminTransactionsPageProps {
   transactions: PaginatedTransactions;
   auth: any;
   filterType: string;
+  filterDateFrom: string;
   [key: string]: any;
 }
 
@@ -62,25 +63,32 @@ const typeColors: Record<string, string> = {
 };
 
 export default function AdminTransactions() {
-  const { transactions, auth, filterType: initialFilterType } = usePage<AdminTransactionsPageProps>().props;
+  const { transactions, auth, filterType: initialFilterType, filterDateFrom: initialDateFrom } = usePage<AdminTransactionsPageProps>().props;
   const [filterType, setFilterType] = useState(initialFilterType);
+  const [dateFrom, setDateFrom] = useState(initialDateFrom);
 
-  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newFilter = e.target.value;
-    setFilterType(newFilter);
-    router.get(route('admin.transactions'), { type: newFilter }, { preserveState: true, replace: true });
+  const applyFilters = () => {
+    const params: Record<string, string> = {};
+    if (filterType) params.type = filterType;
+    if (dateFrom) params.date_from = dateFrom;
+    router.get(route('admin.transactions'), params, { preserveState: true, replace: true });
+  };
+
+  const resetFilters = () => {
+    setFilterType('');
+    setDateFrom('');
+    router.get(route('admin.transactions'), {}, { preserveState: true, replace: true });
   };
 
   return (
     <AdminLayout user={auth?.user} header={<h2 className="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">Admin Transactions</h2>}>
       <Head title="Admin Transactions" />
       <div className="py-8 max-w-4xl mx-auto">
-        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <label className="font-medium">Filter by Type:</label>
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-2">
           <select
-            className="border rounded px-3 py-2 w-full sm:w-60"
+            className="border rounded px-3 py-2 w-full sm:w-48"
             value={filterType}
-            onChange={handleFilterChange}
+            onChange={e => setFilterType(e.target.value)}
           >
             <option value="">All Types</option>
             <option value="topup">Wallet Top Ups</option>
@@ -90,6 +98,14 @@ export default function AdminTransactions() {
             <option value="credit">Admin Credits</option>
             <option value="debit">Admin Debits</option>
           </select>
+          <input
+            type="date"
+            className="border rounded px-3 py-2 w-full sm:w-40"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+          />
+          <button onClick={applyFilters} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">Search</button>
+          <button onClick={resetFilters} className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">Reset</button>
         </div>
         {transactions.data.length === 0 ? (
           <div>No transactions found.</div>

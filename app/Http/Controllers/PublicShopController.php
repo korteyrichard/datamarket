@@ -8,12 +8,19 @@ use App\Models\Product;
 use App\Models\Order;
 use App\Models\Commission;
 use App\Models\Transaction;
+use App\Models\MashupPackage;
+use App\Models\MashupOrder;
 use App\Services\OrderPusherService;
 use App\Services\CodeCraftOrderPusherService;
+use App\Services\CodeCraftMtnOrderPusherService;
+use App\Services\DataFlowOrderPusherService;
 use App\Services\PaystackService;
+use App\Models\Setting as SettingModel;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 
 class PublicShopController extends Controller
@@ -49,6 +56,20 @@ class PublicShopController extends Controller
             ];
         });
 
+        // Get agent mashup products with dealer prices, fallback to base packages
+        $agentMashupProducts = $shop->agentMashupProducts()
+            ->where('is_active', true)
+            ->with('mashupPackage')
+            ->get()
+            ->filter(fn($amp) => $amp->mashupPackage && $amp->mashupPackage->is_active)
+            ->map(fn($amp) => [
+                'id' => $amp->mashupPackage->id,
+                'name' => $amp->mashupPackage->name,
+                'size' => $amp->mashupPackage->size,
+                'price' => $amp->agent_price,
+            ])
+            ->values();
+
         return Inertia::render('PublicShop', [
             'shop' => [
                 'name' => $shop->name,
@@ -58,6 +79,7 @@ class PublicShopController extends Controller
                 'whatsapp_contact' => $shop->whatsapp_contact
             ],
             'products' => $products,
+            'mashupPackages' => $agentMashupProducts,
             'auth' => [
                 'user' => auth()->user()
             ]
@@ -149,6 +171,12 @@ class PublicShopController extends Controller
     {
         $reference = $request->reference;
         
+        // Prevent duplicate orders from the same payment reference
+        if (Order::where('paystack_reference', $reference)->exists()) {
+            $existingOrder = Order::where('paystack_reference', $reference)->first();
+            return redirect()->route('agent.order.success', ['order' => $existingOrder->id]);
+        }
+
         $response = \Illuminate\Support\Facades\Http::withHeaders([
             'Authorization' => 'Bearer ' . config('paystack.secret_key'),
         ])->get("https://api.paystack.co/transaction/verify/{$reference}");
@@ -157,7 +185,6 @@ class PublicShopController extends Controller
             $orderData = session('pending_agent_order');
             
             if ($orderData && $orderData['reference'] === $reference) {
-                // Get the shop where the order was made from using the stored username
                 $shop = AgentShop::where('username', '=', $orderData['agent_username'])->first();
                 
                 if (!$shop) {
@@ -167,57 +194,61 @@ class PublicShopController extends Controller
                     ]);
                     return redirect()->route('home')->with('error', 'Shop not found');
                 }
-                
-                // Create order record with proper agent_id for commission tracking
-                $order = Order::create([
-                    'user_id' => $orderData['agent_id'], // Assign to agent whose shop the order was made from
-                    'agent_id' => $orderData['agent_id'], // Set agent_id for commission calculation
-                    'status' => 'processing',
-                    'total' => $orderData['total'],
-                    'beneficiary_number' => $orderData['beneficiary_number'],
-                    'network' => Product::find($orderData['product_id'])->network,
-                    'customer_name' => $orderData['customer_name'],
-                    'customer_phone' => $orderData['customer_phone'],
-                    'paystack_reference' => $reference,
-                    'customer_email' => $orderData['customer_name'] // This is actually email from the form
-                ]);
 
-                // Attach product to order with base price in pivot table
-                $basePrice = Product::find($orderData['product_id'])->price;
-                $order->products()->attach($orderData['product_id'], [
-                    'quantity' => $orderData['quantity'],
-                    'price' => $basePrice, // Store base price for commission calculation
-                    'beneficiary_number' => $orderData['beneficiary_number']
-                ]);
+                $order = DB::transaction(function () use ($orderData, $reference, $shop) {
+                    // Double-check inside transaction to prevent race
+                    if (Order::where('paystack_reference', $reference)->lockForUpdate()->exists()) {
+                        return Order::where('paystack_reference', $reference)->first();
+                    }
 
-                // Use CommissionService for consistent commission calculation
-                $order->load('agent.agentShop.agentProducts', 'products');
-                $commissionService = new \App\Services\CommissionService();
-                // Pass the shop information to the commission service
-                $commission = $commissionService->calculateAndCreateCommissionFromShop($order, $shop);
+                    $order = Order::create([
+                        'user_id' => $orderData['agent_id'],
+                        'agent_id' => $orderData['agent_id'],
+                        'status' => 'processing',
+                        'total' => $orderData['total'],
+                        'beneficiary_number' => $orderData['beneficiary_number'],
+                        'network' => Product::find($orderData['product_id'])->network,
+                        'customer_name' => $orderData['customer_name'],
+                        'customer_phone' => $orderData['customer_phone'],
+                        'paystack_reference' => $reference,
+                        'customer_email' => $orderData['customer_name']
+                    ]);
 
-                // Clear session
+                    $basePrice = Product::find($orderData['product_id'])->price;
+                    $order->products()->attach($orderData['product_id'], [
+                        'quantity' => $orderData['quantity'],
+                        'price' => $basePrice,
+                        'beneficiary_number' => $orderData['beneficiary_number']
+                    ]);
+
+                    $order->load('agent.agentShop.agentProducts', 'products');
+                    $commissionService = new \App\Services\CommissionService();
+                    $commissionService->calculateAndCreateCommissionFromShop($order, $shop);
+
+                    return $order;
+                });
+
                 session()->forget('pending_agent_order');
 
-                // Push order to external API based on network
+                // Push order to external API
                 try {
                     $productName = strtolower(Product::find($orderData['product_id'])->name ?? '');
                     
-                    // Route to CodeCraft for Telecel, AT Data (Instant), and AT (Big Packages)
                     if (stripos($productName, 'telecel') !== false || 
                         stripos($productName, 'at data') !== false || 
                         stripos($productName, 'at (big packages)') !== false) {
                         $orderPusher = new CodeCraftOrderPusherService();
-                        Log::info('Routing dealer shop order to CodeCraft API', ['order_id' => $order->id, 'product' => $productName]);
+                    } elseif (stripos($productName, 'mtn') !== false && SettingModel::get('dataflow_mtn_api_enabled', 'false') === 'true') {
+                        $orderPusher = new DataFlowOrderPusherService();
+                    } elseif (stripos($productName, 'mtn') !== false && SettingModel::get('codecraft_mtn_api_enabled', 'false') === 'true') {
+                        $orderPusher = new CodeCraftMtnOrderPusherService();
                     } else {
-                        // MTN goes through OrderPusherService
                         $orderPusher = new OrderPusherService();
-                        Log::info('Routing dealer shop order to OrderPusher API', ['order_id' => $order->id, 'product' => $productName]);
                     }
                     
                     $orderPusher->pushOrderToApi($order);
                 } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::error('Failed to push agent shop order to external API', [
+                    Log::error('Failed to push agent shop order to external API', [
                         'order_id' => $order->id,
                         'error' => $e->getMessage()
                     ]);
@@ -323,7 +354,7 @@ class PublicShopController extends Controller
         ]);
 
         try {
-            // Verify payment again to ensure security
+            // Verify payment
             $paystackService = new PaystackService();
             $verification = $paystackService->verifyReference($request->paystack_reference);
 
@@ -338,38 +369,27 @@ class PublicShopController extends Controller
                             ->where('is_active', true)
                             ->first();
             if (!$shop) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Shop not found or inactive'
-                ]);
+                return response()->json(['success' => false, 'message' => 'Shop not found or inactive']);
             }
 
             $product = Product::where('id', $request->product_id)
                              ->where('status', 'IN STOCK')
                              ->first();
             if (!$product) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Product not found or out of stock'
-                ]);
+                return response()->json(['success' => false, 'message' => 'Product not found or out of stock']);
             }
 
             $agentProduct = $shop->agentProducts()
                                 ->where('product_id', $product->id)
                                 ->where('is_active', true)
                                 ->first();
-            
             if (!$agentProduct) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Product not available in this shop'
-                ]);
+                return response()->json(['success' => false, 'message' => 'Product not available in this shop']);
             }
 
-            // Verify payment amount matches product price (allow 1 pesewa difference for rounding)
+            // Verify payment amount matches product price
             $expectedAmount = $agentProduct->agent_price;
             $paidAmount = $verification['data']['amount'];
-            
             if (abs($paidAmount - $expectedAmount) > 0.01) {
                 return response()->json([
                     'success' => false,
@@ -377,93 +397,70 @@ class PublicShopController extends Controller
                 ]);
             }
 
-            // Create the order in a database transaction
-            \DB::beginTransaction();
+            $order = DB::transaction(function () use ($request, $product, $shop, $expectedAmount, $verification) {
+                // Atomic duplicate check inside transaction
+                if (Order::where('paystack_reference', $request->paystack_reference)->lockForUpdate()->exists()) {
+                    return null;
+                }
 
-            $order = Order::create([
-                'user_id' => $shop->user_id,
-                'agent_id' => $shop->user_id,
-                'status' => 'processing',
-                'total' => $expectedAmount,
-                'beneficiary_number' => $request->beneficiary_number,
-                'network' => $product->network,
-                'customer_name' => $verification['data']['email'],
-                'customer_phone' => $request->beneficiary_number,
-                'paystack_reference' => $request->paystack_reference,
-                'customer_email' => $verification['data']['email']
-            ]);
-
-            // Attach product to order with correct quantity
-            Log::info('Attaching product to recovered order', [
-                'product_id' => $product->id,
-                'product_name' => $product->name,
-                'product_quantity' => $product->quantity,
-                'order_id' => $order->id
-            ]);
-            
-            // Extract numeric value from quantity (e.g., "2GB" -> 2)
-            $numericQuantity = (int) filter_var($product->quantity, FILTER_SANITIZE_NUMBER_INT);
-            if ($numericQuantity <= 0) {
-                $numericQuantity = 1; // Default fallback
-            }
-            
-            Log::info('Using numeric quantity', [
-                'original_quantity' => $product->quantity,
-                'numeric_quantity' => $numericQuantity
-            ]);
-            
-            $order->products()->attach($product->id, [
-                'quantity' => $numericQuantity,
-                'price' => $product->price,
-                'beneficiary_number' => $request->beneficiary_number
-            ]);
-
-            // Calculate commission
-            $order->load('agent.agentShop.agentProducts', 'products');
-            $commissionService = new \App\Services\CommissionService();
-            $commission = $commissionService->calculateAndCreateCommissionFromShop($order, $shop);
-
-            \DB::commit();
-
-            // Push order to external API (outside transaction) based on network
-            try {
-                Log::info('Pushing recovered order to external API', [
-                    'order_id' => $order->id,
-                    'total' => $order->total,
-                    'beneficiary' => $request->beneficiary_number
+                $order = Order::create([
+                    'user_id' => $shop->user_id,
+                    'agent_id' => $shop->user_id,
+                    'status' => 'processing',
+                    'total' => $expectedAmount,
+                    'beneficiary_number' => $request->beneficiary_number,
+                    'network' => $product->network,
+                    'customer_name' => $verification['data']['email'],
+                    'customer_phone' => $request->beneficiary_number,
+                    'paystack_reference' => $request->paystack_reference,
+                    'customer_email' => $verification['data']['email']
                 ]);
-                
+
+                $numericQuantity = max(1, (int) filter_var($product->quantity, FILTER_SANITIZE_NUMBER_INT));
+
+                $order->products()->attach($product->id, [
+                    'quantity' => $numericQuantity,
+                    'price' => $product->price,
+                    'beneficiary_number' => $request->beneficiary_number
+                ]);
+
+                $order->load('agent.agentShop.agentProducts', 'products');
+                $commissionService = new \App\Services\CommissionService();
+                $commissionService->calculateAndCreateCommissionFromShop($order, $shop);
+
+                return $order;
+            });
+
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This payment reference has already been used for an order'
+                ]);
+            }
+
+            // Push order to external API (outside transaction)
+            try {
                 $productName = strtolower($product->name ?? '');
                 
-                // Route to CodeCraft for Telecel, AT Data (Instant), and AT (Big Packages)
                 if (stripos($productName, 'telecel') !== false || 
                     stripos($productName, 'at data') !== false || 
                     stripos($productName, 'at (big packages)') !== false) {
                     $orderPusher = new CodeCraftOrderPusherService();
-                    Log::info('Routing recovered order to CodeCraft API', ['order_id' => $order->id, 'product' => $productName]);
+                } elseif (stripos($productName, 'mtn') !== false && SettingModel::get('dataflow_mtn_api_enabled', 'false') === 'true') {
+                    $orderPusher = new DataFlowOrderPusherService();
+                } elseif (stripos($productName, 'mtn') !== false && SettingModel::get('codecraft_mtn_api_enabled', 'false') === 'true') {
+                    $orderPusher = new CodeCraftMtnOrderPusherService();
                 } else {
-                    // MTN goes through OrderPusherService
                     $orderPusher = new OrderPusherService();
-                    Log::info('Routing recovered order to OrderPusher API', ['order_id' => $order->id, 'product' => $productName]);
                 }
                 
                 $orderPusher->pushOrderToApi($order);
-                
-                Log::info('Successfully pushed recovered order to API', ['order_id' => $order->id]);
             } catch (\Exception $e) {
                 Log::error('Failed to push recovered order to external API', [
                     'order_id' => $order->id,
                     'error' => $e->getMessage()
                 ]);
-                // Don't fail the order creation if API push fails
             }
-
-            Log::info('Order created from Paystack reference', [
-                'order_id' => $order->id,
-                'reference' => $request->paystack_reference,
-                'beneficiary' => $request->beneficiary_number,
-                'amount' => $expectedAmount
-            ]);
 
             return response()->json([
                 'success' => true,
@@ -478,19 +475,227 @@ class PublicShopController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            \DB::rollBack();
-            
             Log::error('Failed to create order from reference', [
                 'reference' => $request->paystack_reference,
-                'beneficiary_number' => $request->beneficiary_number,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => $e->getMessage()
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create order. Please contact support if this issue persists.'
             ], 500);
+        }
+    }
+
+    // ─── SHOP MASHUP METHODS ───
+
+    public function mashupCheckout(Request $request)
+    {
+        $request->validate([
+            'mashup_package_id' => 'required|exists:mashup_packages,id',
+            'beneficiary_number' => 'required|string|regex:/^[0-9]{10}$/',
+            'customer_email' => 'required|email',
+            'agent_username' => 'required|string|exists:agent_shops,username',
+        ]);
+
+        $package = MashupPackage::where('id', $request->mashup_package_id)
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        $shop = AgentShop::where('username', $request->agent_username)
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        // Use agent's custom price if they have this mashup in their shop
+        $agentMashup = $shop->agentMashupProducts()
+            ->where('mashup_package_id', $package->id)
+            ->where('is_active', true)
+            ->first();
+
+        $chargeAmount = $agentMashup ? $agentMashup->agent_price : $package->price;
+
+        $reference = 'shop_mashup_' . Str::random(10) . '_' . $request->beneficiary_number;
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . config('paystack.secret_key'),
+            'Content-Type' => 'application/json',
+        ])->post('https://api.paystack.co/transaction/initialize', [
+            'email' => $request->customer_email,
+            'amount' => $chargeAmount * 100,
+            'callback_url' => route('shop.mashup.callback'),
+            'reference' => $reference,
+            'metadata' => [
+                'mashup_package_id' => $package->id,
+                'customer_email' => $request->customer_email,
+                'beneficiary_number' => $request->beneficiary_number,
+                'agent_username' => $request->agent_username,
+            ],
+        ]);
+
+        if ($response->successful()) {
+            return Inertia::location($response->json('data.authorization_url'));
+        }
+
+        return back()->with('error', 'Payment initialization failed');
+    }
+
+    public function mashupCallback(Request $request)
+    {
+        $reference = $request->reference;
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . config('paystack.secret_key'),
+        ])->get("https://api.paystack.co/transaction/verify/{$reference}");
+
+        if (!$response->successful() || $response->json('data.status') !== 'success') {
+            return redirect()->route('home')->with('error', 'Payment verification failed');
+        }
+
+        $existing = MashupOrder::where('paystack_reference', $reference)->first();
+        if ($existing) {
+            return redirect()->route('home')->with('success', 'Order already exists.');
+        }
+
+        $metadata = $response->json('data.metadata');
+        $package = MashupPackage::find($metadata['mashup_package_id']);
+
+        if (!$package) {
+            return redirect()->route('home')->with('error', 'Package not found');
+        }
+
+        $paidAmount = $response->json('data.amount') / 100;
+
+        // Determine shop owner
+        $shopUsername = $metadata['agent_username'] ?? null;
+        $shop = $shopUsername ? AgentShop::where('username', $shopUsername)->where('is_active', true)->first() : null;
+
+        $mashupOrder = MashupOrder::create([
+            'user_id' => $shop ? $shop->user_id : null,
+            'mashup_package_id' => $package->id,
+            'beneficiary_number' => $metadata['beneficiary_number'],
+            'amount' => $paidAmount,
+            'status' => 'pending',
+            'paystack_reference' => $reference,
+            'customer_email' => $metadata['customer_email'],
+        ]);
+
+        // Calculate commission for the dealer (agent_price - base_price)
+        if ($shop) {
+            $agentMashup = $shop->agentMashupProducts()
+                ->where('mashup_package_id', $package->id)
+                ->where('is_active', true)
+                ->first();
+
+            if ($agentMashup) {
+                $commission = $agentMashup->agent_price - $package->price;
+                if ($commission > 0) {
+                    Commission::create([
+                        'agent_id' => $shop->user_id,
+                        'order_id' => null,
+                        'mashup_order_id' => $mashupOrder->id,
+                        'amount' => $commission,
+                        'status' => 'available',
+                        'available_at' => now(),
+                    ]);
+                }
+            }
+
+            return redirect('/shop/' . $shopUsername)->with('success', 'Mashup order placed successfully!');
+        }
+
+        return redirect()->route('home')->with('success', 'Mashup order placed successfully!');
+    }
+
+    public function mashupTrackOrder(Request $request)
+    {
+        $request->validate([
+            'paystack_reference' => 'required|string|starts_with:shop_mashup_|min:10|max:100',
+        ], [
+            'paystack_reference.starts_with' => 'Only shop mashup references are allowed here.',
+        ]);
+
+        try {
+            $order = MashupOrder::where('paystack_reference', $request->paystack_reference)
+                ->with('package')
+                ->first();
+
+            if ($order) {
+                return response()->json([
+                    'success' => true,
+                    'order_found' => true,
+                    'order' => [
+                        'id' => $order->id,
+                        'status' => $order->status,
+                        'amount' => $order->amount,
+                        'beneficiary_number' => $order->beneficiary_number,
+                        'package_name' => $order->package->name ?? 'N/A',
+                        'package_size' => $order->package->size ?? 'N/A',
+                        'created_at' => $order->created_at->format('Y-m-d H:i:s'),
+                    ],
+                ]);
+            }
+
+            // Verify with Paystack and create order
+            $paystackResponse = Http::withHeaders([
+                'Authorization' => 'Bearer ' . config('paystack.secret_key'),
+            ])->timeout(30)->get("https://api.paystack.co/transaction/verify/{$request->paystack_reference}");
+
+            if (!$paystackResponse->successful()) {
+                return response()->json(['success' => false, 'message' => 'Failed to verify with Paystack']);
+            }
+
+            $data = $paystackResponse->json('data');
+            if (!$data || $data['status'] !== 'success') {
+                return response()->json(['success' => false, 'message' => 'Payment was not successful']);
+            }
+
+            $paidAmount = $data['amount'] / 100;
+            $metadata = $data['metadata'] ?? [];
+
+            $package = MashupPackage::where('id', $metadata['mashup_package_id'] ?? 0)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$package || abs($package->price - $paidAmount) > 0.01) {
+                return response()->json(['success' => false, 'message' => 'Could not match payment to a mashup package.']);
+            }
+
+            $order = DB::transaction(function () use ($request, $package, $metadata) {
+                if (MashupOrder::where('paystack_reference', $request->paystack_reference)->lockForUpdate()->exists()) {
+                    return MashupOrder::where('paystack_reference', $request->paystack_reference)->first();
+                }
+
+                $shopUsername = $metadata['agent_username'] ?? null;
+                $shop = $shopUsername ? AgentShop::where('username', $shopUsername)->where('is_active', true)->first() : null;
+
+                return MashupOrder::create([
+                    'user_id' => $shop ? $shop->user_id : null,
+                    'mashup_package_id' => $package->id,
+                    'beneficiary_number' => $metadata['beneficiary_number'] ?? 'unknown',
+                    'amount' => $package->price,
+                    'status' => 'pending',
+                    'paystack_reference' => $request->paystack_reference,
+                    'customer_email' => $metadata['customer_email'] ?? '',
+                ]);
+            });
+
+            return response()->json([
+                'success' => true,
+                'order_found' => true,
+                'order' => [
+                    'id' => $order->id,
+                    'status' => $order->status,
+                    'amount' => $order->amount,
+                    'beneficiary_number' => $order->beneficiary_number,
+                    'package_name' => $package->name,
+                    'package_size' => $package->size,
+                    'created_at' => $order->created_at->format('Y-m-d H:i:s'),
+                ],
+                'message' => 'Order recovered successfully!',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Shop mashup track error', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'An error occurred.'], 500);
         }
     }
 }

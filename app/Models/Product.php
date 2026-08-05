@@ -40,6 +40,11 @@ class Product extends Model
         return $query->where('product_type', 'dealer_product');
     }
 
+    public function scopeForElites($query)
+    {
+        return $query->where('product_type', 'elite_product');
+    }
+
     public function scopeInStock($query)
     {
         return $query->where('status', 'IN STOCK');
@@ -48,6 +53,8 @@ class Product extends Model
     public function scopeForRole($query, $role)
     {
         switch ($role) {
+            case 'elite':
+                return $query->forElites();
             case 'dealer':
                 return $query->forDealers();
             case 'agent':

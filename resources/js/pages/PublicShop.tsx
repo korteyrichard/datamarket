@@ -18,6 +18,13 @@ interface ShopProduct {
     quantity: number;
 }
 
+interface MashupPkg {
+    id: number;
+    name: string;
+    size: string;
+    price: number;
+}
+
 interface Shop {
     name: string;
     username: string;
@@ -29,6 +36,7 @@ interface Shop {
 interface PublicShopProps {
     shop: Shop;
     products: ShopProduct[];
+    mashupPackages: MashupPkg[];
     auth?: {
         user?: {
             id: number;
@@ -38,11 +46,16 @@ interface PublicShopProps {
     };
 }
 
-export default function PublicShop({ shop, products, auth }: PublicShopProps) {
+export default function PublicShop({ shop, products, mashupPackages, auth }: PublicShopProps) {
     const [selectedNetwork, setSelectedNetwork] = useState<string>('all');
     const [selectedProduct, setSelectedProduct] = useState<ShopProduct | null>(null);
     const [showPurchaseModal, setShowPurchaseModal] = useState(false);
     const [showTrackOrderModal, setShowTrackOrderModal] = useState(false);
+    const [showMashupModal, setShowMashupModal] = useState(false);
+    const [showMashupTrackModal, setShowMashupTrackModal] = useState(false);
+    const [mashupTrackRef, setMashupTrackRef] = useState('');
+    const [mashupTrackResult, setMashupTrackResult] = useState<any>(null);
+    const [isMashupTracking, setIsMashupTracking] = useState(false);
     const [trackingData, setTrackingData] = useState({ beneficiary_number: '', paystack_reference: '' });
     const [trackingResult, setTrackingResult] = useState<any>(null);
     const [isTracking, setIsTracking] = useState(false);
@@ -56,6 +69,32 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
         customer_email: '',
         customer_phone: ''
     });
+
+    const mashupForm = useForm({
+        mashup_package_id: '',
+        beneficiary_number: '',
+        customer_email: '',
+        agent_username: shop.username,
+    });
+
+    const handleMashupSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        mashupForm.post('/shop/mashup/checkout');
+    };
+
+    const handleMashupTrack = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsMashupTracking(true);
+        setMashupTrackResult(null);
+        try {
+            const res = await axios.post('/shop/mashup/track', { paystack_reference: mashupTrackRef });
+            setMashupTrackResult(res.data);
+        } catch (err: any) {
+            setMashupTrackResult({ success: false, message: err.response?.data?.message || 'Error tracking order' });
+        } finally {
+            setIsMashupTracking(false);
+        }
+    };
 
     const getNetworkColor = (network: string) => {
         const colors: { [key: string]: string } = {
@@ -200,7 +239,21 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                 onClick={() => setShowTrackOrderModal(true)}
                                 className="mt-4 mr-3 bg-white/20 hover:bg-white/30 text-white border border-white/30 font-semibold px-6 py-2 rounded-full transition-all duration-300"
                             >
-                                📋 Track Order
+                                Track Order
+                            </Button>
+                            {mashupPackages && mashupPackages.length > 0 && (
+                                <Button
+                                    onClick={() => setShowMashupModal(true)}
+                                    className="mt-4 mr-3 bg-purple-500/80 hover:bg-purple-600 text-white border border-purple-400/50 font-semibold px-6 py-2 rounded-full transition-all duration-300"
+                                >
+                                    Mashup
+                                </Button>
+                            )}
+                            <Button
+                                onClick={() => { setShowMashupTrackModal(true); setMashupTrackResult(null); }}
+                                className="mt-4 mr-3 bg-white/20 hover:bg-white/30 text-white border border-white/30 font-semibold px-6 py-2 rounded-full transition-all duration-300"
+                            >
+                                Track Mashup
                             </Button>
                             {shop.whatsapp_contact && (
                                 <Button
@@ -214,7 +267,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                     }}
                                     className="mt-4 bg-green-500 hover:bg-green-600 text-white border border-green-400 font-semibold px-6 py-2 rounded-full transition-all duration-300 shadow-lg"
                                 >
-                                    📱 Contact Dealer
+                                    Contact Dealer
                                 </Button>
                             )}
                         </div>
@@ -235,7 +288,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                         : 'bg-white text-gray-700 hover:bg-gray-50 border-2 border-gray-200 hover:border-gray-300 shadow-lg'
                                         }`}
                                 >
-                                    {network === 'all' ? '🌐 All Networks' : `📱 ${network}`}
+                                    {network === 'all' ? 'All Networks' : network}
                                 </button>
                             ))}
                         </div>
@@ -285,7 +338,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                                 onClick={() => handlePurchase(product)}
                                                 disabled={product.status !== 'IN STOCK'}
                                             >
-                                                {product.status === 'IN STOCK' ? '💳 BUY NOW' : '⚠ OUT OF STOCK'}
+                                                {product.status === 'IN STOCK' ? 'BUY NOW' : 'OUT OF STOCK'}
                                             </Button>
                                         </div>
                                     </CardContent>
@@ -340,7 +393,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                 <input type="hidden" name="agent_username" value={data.agent_username} />
                                 {!auth?.user && (
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">📧 Email Address</label>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
                                         <Input
                                             type="email"
                                             name="customer_email"
@@ -353,7 +406,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">📱 Beneficiary Phone Number</label>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Beneficiary Phone Number</label>
                                     <Input
                                         type="text"
                                         name="beneficiary_number"
@@ -380,7 +433,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                             className="font-bold text-lg"
                                             style={{ color: shop.color || '#1D4ED8' }}
                                         >
-                                            💰 Order Summary
+                                            Order Summary
                                         </span>
                                     </div>
                                     <div className="space-y-2">
@@ -425,7 +478,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                                 : 'linear-gradient(135deg, #10B981, #059669)'
                                         }}
                                     >
-                                        {processing ? '⏳ Processing...' : '🚀 Place Order'}
+                                        {processing ? 'Processing...' : 'Place Order'}
                                     </Button>
                                 </div>
                             </form>
@@ -458,7 +511,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
 
                             <form onSubmit={handleTrackOrder} className="space-y-6">
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">📱 Beneficiary Phone Number</label>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Beneficiary Phone Number</label>
                                     <Input
                                         type="text"
                                         maxLength={10}
@@ -472,7 +525,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">💳 Paystack Reference</label>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Paystack Reference</label>
                                     <Input
                                         type="text"
                                         value={trackingData.paystack_reference}
@@ -507,7 +560,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                                 : 'linear-gradient(135deg, #10B981, #059669)'
                                         }}
                                     >
-                                        {isTracking ? '⏳ Searching...' : '🔍 Track Order'}
+                                        {isTracking ? 'Searching...' : 'Track Order'}
                                     </Button>
                                 </div>
                             </form>
@@ -617,7 +670,7 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                                                                     : 'linear-gradient(135deg, #10B981, #059669)'
                                                                             }}
                                                                         >
-                                                                            {isCreatingOrder ? '⏳ Creating Order...' : '🛒 Create Order'}
+                                                                            {isCreatingOrder ? 'Creating Order...' : 'Create Order'}
                                                                         </Button>
                                                                     </div>
                                                                 </div>
@@ -642,6 +695,134 @@ export default function PublicShop({ shop, products, auth }: PublicShopProps) {
                                 </div>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+            {/* Mashup Order Modal */}
+            {showMashupModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 z-50 overflow-y-auto">
+                    <div className="flex min-h-full items-center justify-center p-4">
+                        <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl my-8">
+                            <div className="text-center mb-6">
+                                <h3 className="text-2xl font-bold text-gray-900 mb-2">Mashup Order</h3>
+                                <p className="text-gray-600">Data + Minutes combos</p>
+                            </div>
+                            <form onSubmit={handleMashupSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Package</label>
+                                    <select
+                                        value={mashupForm.data.mashup_package_id}
+                                        onChange={e => mashupForm.setData('mashup_package_id', e.target.value)}
+                                        className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:border-purple-500"
+                                        required
+                                    >
+                                        <option value="">Select a package</option>
+                                        {mashupPackages.map(pkg => (
+                                            <option key={pkg.id} value={pkg.id}>
+                                                {pkg.name} — {pkg.size} (GHS {pkg.price})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Recipient Number</label>
+                                    <Input
+                                        type="text"
+                                        maxLength={10}
+                                        minLength={10}
+                                        pattern="[0-9]{10}"
+                                        value={mashupForm.data.beneficiary_number}
+                                        onChange={e => mashupForm.setData('beneficiary_number', e.target.value)}
+                                        placeholder="0551234567"
+                                        className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Email Address</label>
+                                    <Input
+                                        type="email"
+                                        value={mashupForm.data.customer_email}
+                                        onChange={e => mashupForm.setData('customer_email', e.target.value)}
+                                        placeholder="you@example.com"
+                                        className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500"
+                                        required
+                                    />
+                                </div>
+                                <div className="flex gap-3">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => setShowMashupModal(false)}
+                                        className="flex-1 py-3 rounded-xl border-2 font-semibold"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        disabled={mashupForm.processing}
+                                        className="flex-1 py-3 rounded-xl text-white font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-90"
+                                    >
+                                        {mashupForm.processing ? 'Processing...' : 'Pay Now'}
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mashup Track Modal */}
+            {showMashupTrackModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-gray-900">Track Mashup Order</h3>
+                            <button onClick={() => setShowMashupTrackModal(false)} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                        </div>
+                        <form onSubmit={handleMashupTrack} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Paystack Reference</label>
+                                <Input
+                                    type="text"
+                                    value={mashupTrackRef}
+                                    onChange={e => setMashupTrackRef(e.target.value)}
+                                    placeholder="shop_mashup_xxxxxxxxxx_05xxxxxxxx"
+                                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500"
+                                    required
+                                />
+                                <p className="text-xs text-gray-500 mt-1">Must start with "shop_mashup_"</p>
+                            </div>
+                            <Button
+                                type="submit"
+                                disabled={isMashupTracking}
+                                className="w-full py-3 rounded-xl text-white font-bold bg-indigo-600 hover:bg-indigo-700"
+                            >
+                                {isMashupTracking ? 'Searching...' : 'Track Order'}
+                            </Button>
+                        </form>
+                        {mashupTrackResult && (
+                            <div className="mt-4 p-4 border rounded-lg">
+                                {mashupTrackResult.success && mashupTrackResult.order_found ? (
+                                    <div>
+                                        <h4 className="font-bold text-green-800 mb-2">✅ Order Found</h4>
+                                        <div className="space-y-1 text-sm">
+                                            <p><strong>Order ID:</strong> #{mashupTrackResult.order.id}</p>
+                                            <p><strong>Package:</strong> {mashupTrackResult.order.package_name} ({mashupTrackResult.order.package_size})</p>
+                                            <p><strong>Number:</strong> {mashupTrackResult.order.beneficiary_number}</p>
+                                            <p><strong>Amount:</strong> GHS {mashupTrackResult.order.amount}</p>
+                                            <p><strong>Status:</strong> <span className="capitalize">{mashupTrackResult.order.status}</span></p>
+                                            <p><strong>Date:</strong> {new Date(mashupTrackResult.order.created_at).toLocaleDateString()}</p>
+                                        </div>
+                                        {mashupTrackResult.message && <p className="text-green-600 text-sm mt-2">{mashupTrackResult.message}</p>}
+                                    </div>
+                                ) : (
+                                    <div className="text-center">
+                                        <h4 className="font-bold text-red-800">❌ {mashupTrackResult.message || 'Order not found'}</h4>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

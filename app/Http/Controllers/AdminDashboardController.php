@@ -12,6 +12,10 @@ use App\Models\Alert;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Services\SmsService;
+use App\Services\OrderPusherService;
+use App\Services\CodeCraftOrderPusherService;
+use App\Services\CodeCraftMtnOrderPusherService;
+use App\Services\DataFlowOrderPusherService;
 
 class AdminDashboardController extends Controller
 {
@@ -45,6 +49,8 @@ class AdminDashboardController extends Controller
             'totalRevenue' => $totalRevenue,
             'apiEnabled' => Setting::get('api_enabled', 'true') === 'true',
             'codeCraftApiEnabled' => Setting::get('codecraft_api_enabled', 'true') === 'true',
+            'codeCraftMtnApiEnabled' => Setting::get('codecraft_mtn_api_enabled', 'false') === 'true',
+            'dataFlowMtnApiEnabled' => Setting::get('dataflow_mtn_api_enabled', 'false') === 'true',
         ]);
     }
 
@@ -70,6 +76,7 @@ class AdminDashboardController extends Controller
         $customerCount = User::where('role', 'customer')->count();
         $agentCount = User::where('role', 'agent')->count();
         $dealerCount = User::where('role', 'dealer')->count();
+        $eliteCount = User::where('role', 'elite')->count();
         $adminCount = User::where('role', 'admin')->count();
         $totalWalletBalance = User::sum('wallet_balance');
 
@@ -82,6 +89,7 @@ class AdminDashboardController extends Controller
                 'customers' => $customerCount,
                 'agents' => $agentCount,
                 'dealers' => $dealerCount,
+                'elites' => $eliteCount,
                 'admins' => $adminCount,
                 'totalWalletBalance' => $totalWalletBalance,
             ],
@@ -114,25 +122,44 @@ class AdminDashboardController extends Controller
             $query->withPivot('quantity', 'price', 'beneficiary_number');
         }, 'user', 'commission'])->select('id', 'user_id', 'agent_id', 'total', 'status', 'api_status', 'created_at', 'network', 'beneficiary_number', 'customer_email', 'paystack_reference')->latest();
 
-        if ($request->has('network') && $request->input('network') !== '') {
+        if ($request->filled('network')) {
             $orders->where('network', 'like', '%' . $request->input('network') . '%');
         }
 
-        if ($request->has('status') && $request->input('status') !== '') {
+        if ($request->filled('status')) {
             $orders->where('status', $request->input('status'));
         }
 
-        // Search by order ID
-        if ($request->has('order_id') && $request->input('order_id') !== '') {
+        if ($request->filled('order_id')) {
             $orders->where('id', $request->input('order_id'));
         }
 
-        // Search by beneficiary number
-        if ($request->has('beneficiary_number') && $request->input('beneficiary_number') !== '') {
+        if ($request->filled('beneficiary_number')) {
             $orders->where('beneficiary_number', 'like', '%' . $request->input('beneficiary_number') . '%');
         }
 
-        // Filter by recovered orders (orders with paystack_reference)
+        if ($request->filled('api_status')) {
+            $orders->where('api_status', $request->input('api_status'));
+        }
+
+        if ($request->filled('email')) {
+            $email = $request->input('email');
+            $orders->where(function($query) use ($email) {
+                $query->where('customer_email', 'like', '%' . $email . '%')
+                    ->orWhereHas('user', function($q) use ($email) {
+                        $q->where('email', 'like', '%' . $email . '%');
+                    });
+            });
+        }
+
+        if ($request->filled('date_from')) {
+            $orders->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+
+        if ($request->filled('date_to')) {
+            $orders->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+
         if ($request->has('recovered') && $request->input('recovered') === 'true') {
             $orders->whereNotNull('paystack_reference');
         }
@@ -143,13 +170,20 @@ class AdminDashboardController extends Controller
         $dailyCommissions = \App\Models\Commission::whereDate('created_at', $today)->sum('amount');
         $recoveredOrdersCount = Order::whereNotNull('paystack_reference')->count();
 
+        $allNetworks = Order::whereNotNull('network')->distinct()->pluck('network')->sort()->values();
+
         return Inertia::render('Admin/Orders', [
-            'orders' => $orders->paginate(50),
+            'orders' => $orders->paginate(50)->withQueryString(),
             'filterNetwork' => $request->input('network', ''),
             'filterStatus' => $request->input('status', ''),
+            'filterApiStatus' => $request->input('api_status', ''),
+            'searchEmail' => $request->input('email', ''),
             'searchOrderId' => $request->input('order_id', ''),
             'searchBeneficiaryNumber' => $request->input('beneficiary_number', ''),
+            'filterDateFrom' => $request->input('date_from', ''),
+            'filterDateTo' => $request->input('date_to', ''),
             'filterRecovered' => $request->input('recovered', ''),
+            'allNetworks' => $allNetworks,
             'dailySales' => $dailySales,
             'dailyCommissions' => $dailyCommissions,
             'recoveredOrdersCount' => $recoveredOrdersCount
@@ -226,6 +260,67 @@ class AdminDashboardController extends Controller
             ]);
 
         return redirect()->back()->with('success', 'Commission made available for withdrawal');
+    }
+
+    /**
+     * Retry pushing a single order to the enabled API.
+     */
+    public function retryOrder(Order $order)
+    {
+        $order->load('products');
+        if (!$this->pushOrderWithEnabledService($order)) {
+            return redirect()->back()->with('error', 'No API pusher is currently enabled.');
+        }
+        return redirect()->back()->with('success', "Order #{$order->id} has been retried.");
+    }
+
+    /**
+     * Bulk retry pushing orders to the enabled API.
+     */
+    public function bulkRetryOrders(Request $request)
+    {
+        $request->validate([
+            'order_ids' => 'required|array|min:1',
+            'order_ids.*' => 'exists:orders,id',
+        ]);
+
+        $orders = Order::with('products')
+            ->whereIn('id', $request->order_ids)
+            ->where('status', 'processing')
+            ->whereIn('api_status', ['failed', 'disabled'])
+            ->get();
+
+        if ($orders->isEmpty()) {
+            return redirect()->back()->with('error', 'No retryable orders found.');
+        }
+
+        foreach ($orders as $order) {
+            $this->pushOrderWithEnabledService($order);
+        }
+
+        return redirect()->back()->with('success', "Retried {$orders->count()} order(s).");
+    }
+
+    private function pushOrderWithEnabledService(Order $order): bool
+    {
+        $productName = strtolower($order->products->first()->name ?? '');
+
+        if (stripos($productName, 'telecel') !== false ||
+            stripos($productName, 'at data') !== false ||
+            stripos($productName, 'at (big packages)') !== false) {
+            (new CodeCraftOrderPusherService())->pushOrderToApi($order);
+            return true;
+        } elseif (stripos($productName, 'mtn') !== false && Setting::get('dataflow_mtn_api_enabled', 'false') === 'true') {
+            (new DataFlowOrderPusherService())->pushOrderToApi($order);
+            return true;
+        } elseif (stripos($productName, 'mtn') !== false && Setting::get('codecraft_mtn_api_enabled', 'false') === 'true') {
+            (new CodeCraftMtnOrderPusherService())->pushOrderToApi($order);
+            return true;
+        } elseif (Setting::get('api_enabled', 'true') === 'true') {
+            (new OrderPusherService())->pushOrderToApi($order);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -353,13 +448,23 @@ class AdminDashboardController extends Controller
     {
         $transactions = Transaction::with('user', 'order.user')->latest();
 
-        if ($request->has('type') && $request->input('type') !== '') {
+        if ($request->filled('type')) {
             $transactions->where('type', $request->input('type'));
         }
 
+        if ($request->filled('date_from')) {
+            $transactions->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+
+        if ($request->filled('date_to')) {
+            $transactions->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+
         return Inertia::render('Admin/Transactions', [
-            'transactions' => $transactions->paginate(10),
+            'transactions' => $transactions->paginate(10)->withQueryString(),
             'filterType' => $request->input('type', ''),
+            'filterDateFrom' => $request->input('date_from', ''),
+            'filterDateTo' => $request->input('date_to', ''),
         ]);
     }
 
@@ -372,7 +477,7 @@ class AdminDashboardController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
-            'role' => 'required|string|in:customer,agent,dealer,admin',
+            'role' => 'required|string|in:customer,agent,dealer,elite,admin',
         ]);
 
         User::create([
@@ -391,7 +496,7 @@ class AdminDashboardController extends Controller
     public function updateUserRole(Request $request, User $user)
     {
         $request->validate([
-            'role' => 'required|string|in:customer,agent,dealer,admin',
+            'role' => 'required|string|in:customer,agent,dealer,elite,admin',
         ]);
 
         $user->update([
@@ -476,7 +581,7 @@ class AdminDashboardController extends Controller
             'status'=>'required|string|max:255',
             'quantity' => 'required|string|max:255',
             'price' => 'required|numeric',
-            'product_type' => 'required|string|in:agent_product,customer_product,dealer_product',
+            'product_type' => 'required|string|in:agent_product,customer_product,dealer_product,elite_product',
         ]);
 
         Product::create([
@@ -506,7 +611,7 @@ class AdminDashboardController extends Controller
             'status'=>'required|string|max:255',
             'quantity' => 'required|string|max:255',
             'price' => 'required|numeric',
-            'product_type' => 'required|string|in:agent_product,customer_product,dealer_product',
+            'product_type' => 'required|string|in:agent_product,customer_product,dealer_product,elite_product',
         ]);
 
         $product->update([
@@ -535,16 +640,30 @@ class AdminDashboardController extends Controller
     /**
      * Display user transaction history.
      */
-    public function userTransactions(User $user)
+    public function userTransactions(Request $request, User $user)
     {
         $transactions = Transaction::where('user_id', $user->id)
             ->with('order')
-            ->latest()
-            ->get();
+            ->latest();
+
+        if ($request->filled('type')) {
+            $transactions->where('type', $request->input('type'));
+        }
+
+        if ($request->filled('date_from')) {
+            $transactions->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+
+        if ($request->filled('date_to')) {
+            $transactions->whereDate('created_at', '<=', $request->input('date_to'));
+        }
 
         return Inertia::render('Admin/UserTransactions', [
             'user' => $user,
-            'transactions' => $transactions,
+            'transactions' => $transactions->paginate(20)->withQueryString(),
+            'filterType' => $request->input('type', ''),
+            'filterDateFrom' => $request->input('date_from', ''),
+            'filterDateTo' => $request->input('date_to', ''),
         ]);
     }
 
@@ -613,6 +732,34 @@ class AdminDashboardController extends Controller
         Setting::set('codecraft_api_enabled', $request->enabled ? 'true' : 'false');
 
         return redirect()->back()->with('success', 'CodeCraft API status updated successfully.');
+    }
+
+    /**
+     * Toggle CodeCraft MTN API status.
+     */
+    public function toggleCodeCraftMtnApi(Request $request)
+    {
+        $request->validate([
+            'enabled' => 'required|boolean',
+        ]);
+
+        Setting::set('codecraft_mtn_api_enabled', $request->enabled ? 'true' : 'false');
+
+        return redirect()->back()->with('success', 'CodeCraft MTN API status updated successfully.');
+    }
+
+    /**
+     * Toggle DataFlow MTN API status.
+     */
+    public function toggleDataFlowMtnApi(Request $request)
+    {
+        $request->validate([
+            'enabled' => 'required|boolean',
+        ]);
+
+        Setting::set('dataflow_mtn_api_enabled', $request->enabled ? 'true' : 'false');
+
+        return redirect()->back()->with('success', 'DataFlow MTN API status updated successfully.');
     }
 
     /**

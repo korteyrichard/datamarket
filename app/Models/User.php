@@ -176,4 +176,14 @@ class User extends Authenticatable
     {
         return $this->role === 'dealer';
     }
+
+    /**
+     * Check if the user is an elite.
+     *
+     * @return bool
+     */
+    public function isElite(): bool
+    {
+        return $this->role === 'elite';
+    }
 }

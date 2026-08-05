@@ -8,8 +8,8 @@ import MTNCard from '../../components/MTNCard';
 import AlertBanner from '../../components/AlertBanner';
 import { Icon } from '@/components/ui/icon';
 import { Link } from '@inertiajs/react';
-import PwaInstallBanner from '../../components/PwaInstallBanner';
 import axios from '@/lib/axios';
+import BulkOrderModal from '../../components/BulkOrderModal';
 
 
 interface Product {
@@ -266,9 +266,12 @@ export default function Dashboard({ auth }: DashboardProps) {
 
           {/* Data Packages Section */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Data Packages</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Available data packages by network</p>
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Data Packages</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Available data packages by network</p>
+              </div>
+              <BulkOrderModal products={products} />
             </div>
 
             {/* Network Filter Tabs */}
@@ -396,7 +399,6 @@ export default function Dashboard({ auth }: DashboardProps) {
           </Link>
         </div>
       </div>
-      <PwaInstallBanner />
     </DashboardLayout>
   );
 }

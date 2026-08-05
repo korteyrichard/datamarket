@@ -31,7 +31,13 @@ export default function Cart() {
     router.delete(route('remove.from.cart', cartId));
   };
 
-  const total = cartItems.reduce((sum, item) => sum + Number(item.price || 0), 0);
+  const handleClearAll = () => {
+    if (confirm('Are you sure you want to clear all items from your cart?')) {
+      router.delete('/cart/clear');
+    }
+  };
+
+  const total = parseFloat(cartItems.reduce((sum, item) => sum + Number(item.price || 0), 0).toFixed(2));
 
   return (
     <DashboardLayout
@@ -48,7 +54,7 @@ export default function Cart() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
             {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-500 to-blue-600 px-4 sm:px-6 lg:px-8 py-6">
+            <div className="bg-gradient-to-r from-indigo-500 to-blue-600 px-4 sm:px-6 lg:px-8 py-6 flex items-center justify-between">
               <h3 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
                 <Icon name="ShoppingCart" className="w-7 h-7 sm:w-8 sm:h-8" />
                 Your Cart
@@ -58,6 +64,14 @@ export default function Cart() {
                   </span>
                 )}
               </h3>
+              {cartItems.length > 0 && (
+                <button
+                  onClick={handleClearAll}
+                  className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg transition-colors duration-200"
+                >
+                  Clear All
+                </button>
+              )}
             </div>
 
             <div className="p-4 sm:p-6 lg:p-8">

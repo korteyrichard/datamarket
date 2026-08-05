@@ -9,6 +9,8 @@ use App\Models\Setting;
 use App\Models\Transaction;
 use App\Services\OrderPusherService;
 use App\Services\CodeCraftOrderPusherService;
+use App\Services\CodeCraftMtnOrderPusherService;
+use App\Services\DataFlowOrderPusherService;
 use App\Services\CommissionService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
@@ -18,36 +20,39 @@ use Illuminate\Support\Facades\Log;
 class OrdersController extends Controller
 {
     use ApiResponse;
+
     public function createOrder(Request $request)
     {
         $request->validate([
             'product_id' => 'required|exists:products,id',
             'quantity' => 'required|string|max:10',
             'beneficiary_number' => 'required|string|regex:/^[0-9+\-\s]+$/|max:20',
-            'agent_id' => 'nullable|exists:users,id' // Optional agent ID for commission tracking
+            'agent_id' => 'nullable|exists:users,id'
         ]);
 
         $user = $request->user();
-        
-        if (!in_array($user->role, ['agent', 'dealer', 'admin'])) {
-            return $this->errorResponse('Only agents, dealers and admins can create orders via API', 403);
+
+        if (!in_array($user->role, ['agent', 'dealer', 'elite', 'admin'])) {
+            return $this->errorResponse('Only agents, dealers, elites and admins can create orders via API', 403);
         }
-        
+
         // Determine product type based on user role
         $productType = match($user->role) {
             'dealer' => 'dealer_product',
-            'agent' => 'agent_product', 
-            'admin' => null, // Admin can access all product types
-            default => null
+            'agent'  => 'agent_product',
+            'elite'  => 'elite_product',
+            'admin'  => null,
+            default  => null
         };
-        
-        $productQuery = Product::where('id', $request->validated()['product_id'])
+
+        // ✅ FIXED: use $request->product_id instead of $request->validated()['product_id']
+        $productQuery = Product::where('id', $request->product_id)
             ->where('status', '=', 'IN STOCK');
-            
+
         if ($productType) {
             $productQuery->where('product_type', '=', $productType);
         }
-        
+
         $product = $productQuery->first();
 
         if (!$product) {
@@ -77,30 +82,30 @@ class OrdersController extends Controller
 
             // Create the order
             $order = Order::create([
-                'user_id' => $user->id,
-                'status' => 'processing',
-                'total' => $totalPrice,
+                'user_id'            => $user->id,
+                'status'             => 'processing',
+                'total'              => $totalPrice,
                 'beneficiary_number' => $request->beneficiary_number,
-                'network' => $product->network,
-                'agent_id' => $request->agent_id, // Store agent ID if provided
+                'network'            => $product->network,
+                'agent_id'           => $request->agent_id,
             ]);
 
             // Attach product to the order
             $order->products()->attach($product->id, [
-                'quantity' => 1,
-                'price' => $product->price,
+                'quantity'           => (int) filter_var($product->quantity, FILTER_SANITIZE_NUMBER_INT),
+                'price'              => $product->price,
                 'beneficiary_number' => $request->beneficiary_number,
             ]);
 
             // Create transaction record
             $transaction = Transaction::create([
-                'user_id' => $user->id,
-                'order_id' => $order->id,
-                'amount' => $totalPrice,
-                'status' => 'completed',
-                'type' => 'order',
+                'user_id'     => $user->id,
+                'order_id'    => $order->id,
+                'amount'      => $totalPrice,
+                'status'      => 'completed',
+                'type'        => 'order',
                 'description' => 'API Order placed for ' . $product->network . ' - ' . $product->name,
-                'reference' => 'API-' . $order->id . '-' . time(),
+                'reference'   => 'API-' . $order->id . '-' . time(),
             ]);
 
             // Create commission if agent is involved
@@ -115,19 +120,23 @@ class OrdersController extends Controller
             // Push order to external API based on network
             try {
                 $productName = strtolower($product->name ?? '');
-                
-                // Route to CodeCraft for Telecel, AT Data (Instant), and AT (Big Packages)
-                if (stripos($productName, 'telecel') !== false || 
-                    stripos($productName, 'at data') !== false || 
+
+                if (stripos($productName, 'telecel') !== false ||
+                    stripos($productName, 'at data') !== false ||
                     stripos($productName, 'at (big packages)') !== false) {
                     $orderPusher = new CodeCraftOrderPusherService();
                     Log::info('Routing API order to CodeCraft API', ['order_id' => $order->id, 'product' => $productName]);
+                } elseif (stripos($productName, 'mtn') !== false && Setting::get('dataflow_mtn_api_enabled', 'false') === 'true') {
+                    $orderPusher = new DataFlowOrderPusherService();
+                    Log::info('Routing API MTN order to DataFlow API', ['order_id' => $order->id, 'product' => $productName]);
+                } elseif (stripos($productName, 'mtn') !== false && Setting::get('codecraft_mtn_api_enabled', 'false') === 'true') {
+                    $orderPusher = new CodeCraftMtnOrderPusherService();
+                    Log::info('Routing API MTN order to CodeCraft MTN API', ['order_id' => $order->id, 'product' => $productName]);
                 } else {
-                    // MTN goes through OrderPusherService
                     $orderPusher = new OrderPusherService();
                     Log::info('Routing API order to OrderPusher API', ['order_id' => $order->id, 'product' => $productName]);
                 }
-                
+
                 $orderPusher->pushOrderToApi($order);
             } catch (\Exception $e) {
                 Log::error('Failed to push API order to external service', ['error' => $e->getMessage()]);
@@ -137,14 +146,14 @@ class OrdersController extends Controller
             $order->load(['products', 'transactions']);
 
             return $this->successResponse([
-                'order' => $order,
+                'order'       => $order,
                 'transaction' => $transaction,
             ], 'Order created successfully', 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('API order creation failed', ['error' => $e->getMessage()]);
-            
+
             return $this->errorResponse('Order creation failed: ' . $e->getMessage(), 500);
         }
     }
@@ -152,13 +161,13 @@ class OrdersController extends Controller
     public function getOrders(Request $request)
     {
         $user = $request->user();
-        
-        $orders = Order::with(['products' => function($query) {
+
+        $orders = Order::with(['products' => function ($query) {
             $query->withPivot('quantity', 'price', 'beneficiary_number');
         }, 'transactions'])
-        ->where('user_id', $user->id)
-        ->latest()
-        ->paginate(20);
+            ->where('user_id', $user->id)
+            ->latest()
+            ->paginate(20);
 
         return $this->successResponse($orders);
     }
@@ -166,12 +175,12 @@ class OrdersController extends Controller
     public function getOrder(Request $request, $id)
     {
         $user = $request->user();
-        
-        $order = Order::with(['products' => function($query) {
+
+        $order = Order::with(['products' => function ($query) {
             $query->withPivot('quantity', 'price', 'beneficiary_number');
         }, 'transactions'])
-        ->where('user_id', $user->id)
-        ->findOrFail($id);
+            ->where('user_id', $user->id)
+            ->findOrFail($id);
 
         return $this->successResponse($order);
     }
@@ -179,26 +188,26 @@ class OrdersController extends Controller
     public function getProducts(Request $request)
     {
         $user = $request->user();
-        
-        if (!in_array($user->role, ['agent', 'dealer', 'admin'])) {
-            return $this->errorResponse('Only agents, dealers and admins can access products via API', 403);
+
+        if (!in_array($user->role, ['agent', 'dealer', 'elite', 'admin'])) {
+            return $this->errorResponse('Only agents, dealers, elites and admins can access products via API', 403);
         }
-        
-        // Determine product type based on user role
+
         $productType = match($user->role) {
             'dealer' => 'dealer_product',
-            'agent' => 'agent_product',
-            'admin' => null, // Admin can access all product types
-            default => null
+            'agent'  => 'agent_product',
+            'elite'  => 'elite_product',
+            'admin'  => null,
+            default  => null
         };
-        
+
         $productsQuery = Product::where('status', '=', 'IN STOCK')
             ->select('id', 'name', 'price', 'network', 'product_type', 'description', 'quantity');
-            
+
         if ($productType) {
             $productsQuery->where('product_type', '=', $productType);
         }
-        
+
         $products = $productsQuery->get();
 
         return $this->successResponse($products);

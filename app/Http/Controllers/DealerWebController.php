@@ -7,6 +7,8 @@ use App\Models\Commission;
 use App\Models\Withdrawal;
 use App\Models\Referral;
 use App\Models\ReferralCommission;
+use App\Models\MashupPackage;
+use App\Models\AgentMashupProduct;
 use App\Services\AgentService;
 use App\Services\ReferralService;
 use Illuminate\Http\Request;
@@ -53,6 +55,10 @@ class DealerWebController extends Controller
             'dashboardData' => $dashboardData,
             'agentProducts' => $dealerProducts,
             'availableProducts' => $availableProducts,
+            'agentMashupProducts' => $user->agentShop->agentMashupProducts()->with('mashupPackage')->where('is_active', true)->get(),
+            'availableMashupPackages' => MashupPackage::where('is_active', true)
+                ->whereNotIn('id', $user->agentShop->agentMashupProducts()->pluck('mashup_package_id'))
+                ->get(),
             'shopUrl' => route('public.shop', ['username' => $user->agentShop->username])
         ]);
     }
@@ -221,6 +227,45 @@ class DealerWebController extends Controller
         } catch (\Exception $e) {
             return redirect()->back()->with('error', $e->getMessage());
         }
+    }
+
+    public function addMashupProduct(Request $request)
+    {
+        $request->validate([
+            'mashup_package_id' => 'required|exists:mashup_packages,id',
+            'agent_price' => 'required|numeric|min:0',
+        ]);
+
+        $shop = $request->user()->agentShop;
+        if (!$shop) {
+            return redirect()->back()->with('error', 'Dealer shop not found');
+        }
+
+        $existing = $shop->agentMashupProducts()->where('mashup_package_id', $request->mashup_package_id)->first();
+        if ($existing) {
+            return redirect()->back()->with('error', 'This mashup package is already in your shop');
+        }
+
+        AgentMashupProduct::create([
+            'agent_shop_id' => $shop->id,
+            'mashup_package_id' => $request->mashup_package_id,
+            'agent_price' => $request->agent_price,
+            'is_active' => true,
+        ]);
+
+        return redirect()->back()->with('success', 'Mashup package added to shop successfully');
+    }
+
+    public function removeMashupProduct(Request $request, MashupPackage $mashupPackage)
+    {
+        $shop = $request->user()->agentShop;
+        if (!$shop) {
+            return redirect()->back()->with('error', 'Dealer shop not found');
+        }
+
+        $shop->agentMashupProducts()->where('mashup_package_id', $mashupPackage->id)->delete();
+
+        return redirect()->back()->with('success', 'Mashup package removed from shop');
     }
 
     public function requestWithdrawal(Request $request)

@@ -2,7 +2,6 @@ import { type SharedData } from '@/types';
 import { Head, Link, usePage, useForm } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import PwaInstallBanner from '@/components/PwaInstallBanner';
 import AlertBanner from '@/components/AlertBanner';
 
 interface Product {
@@ -241,6 +240,12 @@ export default function Welcome({ products, alerts }: WelcomeProps) {
 
                 {/* Track Order Button */}
                 <div className="text-center pt-24 pb-8 px-4 flex flex-wrap gap-4 justify-center items-center">
+                    <Link
+                        href={route('guest.mashup')}
+                        className="px-6 py-2 text-white font-semibold bg-purple-600 hover:bg-purple-700 transition-colors"
+                    >
+                        Mashup Packages
+                    </Link>
                     <button
                         onClick={() => {
                             setShowTrackOrderModal(true);
@@ -248,7 +253,7 @@ export default function Welcome({ products, alerts }: WelcomeProps) {
                         }}
                         className="px-6 py-2 text-white font-semibold bg-blue-600 hover:bg-blue-700 transition-colors"
                     >
-                        📋 Track Order
+                        Track Order
                     </button>
                     <a
                         href="https://t.me/Richie_bankx"
@@ -256,7 +261,7 @@ export default function Welcome({ products, alerts }: WelcomeProps) {
                         rel="noopener noreferrer"
                         className="px-6 py-2 text-white font-semibold bg-blue-600 hover:bg-blue-700 transition-colors"
                     >
-                        📞 Contact Us
+                        Contact Us
                     </a>
                     <a
                         href="https://youtube.com/shorts/uYZrGg_ojpI?si=0-0ql4_ODj5WG27E"
@@ -576,7 +581,6 @@ export default function Welcome({ products, alerts }: WelcomeProps) {
                 )}
 
             </div>
-            <PwaInstallBanner />
         </>
     );
 }

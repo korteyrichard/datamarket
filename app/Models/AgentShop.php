@@ -28,4 +28,9 @@ class AgentShop extends Model
             ->withPivot('agent_price', 'is_active')
             ->withTimestamps();
     }
+
+    public function agentMashupProducts()
+    {
+        return $this->hasMany(AgentMashupProduct::class);
+    }
 }

@@ -30,16 +30,33 @@ interface AgentProduct {
     product: Product;
 }
 
+interface MashupPackage {
+    id: number;
+    name: string;
+    size: string;
+    price: number;
+}
+
+interface AgentMashupProduct {
+    id: number;
+    agent_price: number;
+    mashup_package: MashupPackage;
+}
+
 interface AgentDashboardProps extends PageProps {
     dashboardData: DashboardStats;
     agentProducts: AgentProduct[];
     availableProducts: Product[];
+    agentMashupProducts: AgentMashupProduct[];
+    availableMashupPackages: MashupPackage[];
     shopUrl: string;
 }
 
-export default function AgentDashboard({ auth, dashboardData, agentProducts, availableProducts, shopUrl }: AgentDashboardProps) {
+export default function AgentDashboard({ auth, dashboardData, agentProducts, availableProducts, agentMashupProducts, availableMashupPackages, shopUrl }: AgentDashboardProps) {
     const [selectedProduct, setSelectedProduct] = useState('');
     const [agentPrice, setAgentPrice] = useState('');
+    const [selectedMashup, setSelectedMashup] = useState('');
+    const [mashupPrice, setMashupPrice] = useState('');
     const [copied, setCopied] = useState(false);
     
     const { delete: destroy, processing } = useForm();
@@ -98,6 +115,26 @@ export default function AgentDashboard({ auth, dashboardData, agentProducts, ava
 
     const handleRemoveProduct = (productId: number) => {
         destroy(`/dealer/products/${productId}`);
+    };
+
+    const handleAddMashupProduct = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedMashup || !mashupPrice) return;
+
+        axios.post('/dealer/mashup-products', {
+            mashup_package_id: selectedMashup,
+            agent_price: mashupPrice,
+        }).then(response => {
+            if (response.status === 200 || response.status === 201) {
+                setSelectedMashup('');
+                setMashupPrice('');
+                window.location.reload();
+            }
+        }).catch(error => console.error('Error:', error));
+    };
+
+    const handleRemoveMashupProduct = (packageId: number) => {
+        destroy(`/dealer/mashup-products/${packageId}`);
     };
     return (
         <DashboardLayout
@@ -237,7 +274,7 @@ export default function AgentDashboard({ auth, dashboardData, agentProducts, ava
                                             </SelectContent>
                                         </Select>
                                         {availableProducts?.length === 0 && (
-                                            <p className="text-sm text-gray-500 mt-1">No products available to add</p>
+                                            <p className="text-sm text-white/70 mt-1">No products available to add</p>
                                         )}
                                     </div>
                                     <div>
@@ -247,10 +284,10 @@ export default function AgentDashboard({ auth, dashboardData, agentProducts, ava
                                             placeholder="Your selling price"
                                             value={agentPrice}
                                             onChange={(e) => setAgentPrice(e.target.value)}
-                                            className="w-full"
+                                            className="w-full bg-white text-gray-900 border-gray-300"
                                         />
                                         {selectedProduct && availableProducts && (
-                                            <p className="text-xs text-gray-500 mt-1">
+                                            <p className="text-xs text-white/70 mt-1">
                                                 Base price: GHS {availableProducts.find(p => p.id.toString() === selectedProduct)?.price || 0}
                                             </p>
                                         )}
@@ -269,10 +306,10 @@ export default function AgentDashboard({ auth, dashboardData, agentProducts, ava
                             <CardContent>
                                 <div className="space-y-3 max-h-64 overflow-y-auto">
                                     {agentProducts?.map((agentProduct) => (
-                                        <div key={agentProduct.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 p-3 border rounded">
+                                        <div key={agentProduct.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 p-3 border border-white/30 rounded">
                                             <div className="flex-1">
-                                                <div className="font-medium text-sm sm:text-base">{agentProduct.product.name}</div>
-                                                <div className="text-xs sm:text-sm text-gray-500">
+                                                <div className="font-medium text-sm sm:text-base text-white">{agentProduct.product.name}</div>
+                                                <div className="text-xs sm:text-sm text-white/70">
                                                     Base: GHS {agentProduct.product.price} | Your Price: GHS {agentProduct.agent_price}
                                                 </div>
                                             </div>
@@ -288,7 +325,90 @@ export default function AgentDashboard({ auth, dashboardData, agentProducts, ava
                                         </div>
                                     ))}
                                     {(!agentProducts || agentProducts.length === 0) && (
-                                        <p className="text-gray-500 text-center py-4">No products in your shop yet</p>
+                                        <p className="text-white/70 text-center py-4">No products in your shop yet</p>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {/* Mashup Products Management */}
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                        <Card className="bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white border-0 shadow-xl">
+                            <CardHeader>
+                                <CardTitle className="text-white">Add Mashup Package to Shop</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={handleAddMashupProduct} className="space-y-4">
+                                    <div>
+                                        <Select value={selectedMashup} onValueChange={setSelectedMashup}>
+                                            <SelectTrigger className="w-full bg-white text-gray-900 border-gray-300">
+                                                <SelectValue placeholder="Select a mashup package" className="text-gray-500" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {availableMashupPackages?.map((pkg) => (
+                                                    <SelectItem key={pkg.id} value={pkg.id.toString()}>
+                                                        <div className="flex flex-col sm:flex-row sm:items-center gap-1">
+                                                            <span className="font-medium">{pkg.name}</span>
+                                                            <span className="text-sm text-gray-500">GHS {pkg.price} ({pkg.size})</span>
+                                                        </div>
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {availableMashupPackages?.length === 0 && (
+                                            <p className="text-sm text-white/70 mt-1">No mashup packages available to add</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            placeholder="Your selling price"
+                                            value={mashupPrice}
+                                            onChange={(e) => setMashupPrice(e.target.value)}
+                                            className="w-full bg-white text-gray-900 border-gray-300"
+                                        />
+                                        {selectedMashup && availableMashupPackages && (
+                                            <p className="text-xs text-white/70 mt-1">
+                                                Base price: GHS {availableMashupPackages.find(p => p.id.toString() === selectedMashup)?.price || 0}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <Button type="submit" disabled={!selectedMashup || !mashupPrice} className="w-full sm:w-auto">
+                                        Add Mashup
+                                    </Button>
+                                </form>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-500 text-white border-0 shadow-xl">
+                            <CardHeader>
+                                <CardTitle className="text-white">Your Mashup Packages</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-3 max-h-64 overflow-y-auto">
+                                    {agentMashupProducts?.map((item) => (
+                                        <div key={item.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 p-3 border border-white/30 rounded">
+                                            <div className="flex-1">
+                                                <div className="font-medium text-sm sm:text-base text-white">{item.mashup_package.name} ({item.mashup_package.size})</div>
+                                                <div className="text-xs sm:text-sm text-white/70">
+                                                    Base: GHS {item.mashup_package.price} | Your Price: GHS {item.agent_price}
+                                                </div>
+                                            </div>
+                                            <Button
+                                                variant="destructive"
+                                                size="sm"
+                                                onClick={() => handleRemoveMashupProduct(item.mashup_package.id)}
+                                                disabled={processing}
+                                                className="w-full sm:w-auto"
+                                            >
+                                                Remove
+                                            </Button>
+                                        </div>
+                                    ))}
+                                    {(!agentMashupProducts || agentMashupProducts.length === 0) && (
+                                        <p className="text-white/70 text-center py-4">No mashup packages in your shop yet</p>
                                     )}
                                 </div>
                             </CardContent>

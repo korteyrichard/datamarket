@@ -31,25 +31,6 @@ class WalletController extends Controller
         $reference = $request->reference;
         $userId = auth()->id();
 
-        $transaction = Transaction::where('reference', $reference)
-            ->where('user_id', $userId)
-            ->where('type', 'topup')
-            ->first();
-
-        if (!$transaction) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Transaction not found'
-            ]);
-        }
-
-        if ($transaction->status === 'completed') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Transaction already verified'
-            ]);
-        }
-
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . config('paystack.secret_key'),
@@ -58,23 +39,42 @@ class WalletController extends Controller
 
             $paystackData = $response->json();
 
-            if ($response->successful() && $paystackData['status'] && $paystackData['data']['status'] === 'success') {
-                DB::transaction(function () use ($transaction, $userId) {
-                    $transaction->update(['status' => 'completed']);
-                    $user = User::find($userId);
-                    $user->increment('wallet_balance', $transaction->amount);
-                });
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Payment verified and balance updated'
-                ]);
-            } else {
+            if (!($response->successful() && $paystackData['status'] && $paystackData['data']['status'] === 'success')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Payment verification failed'
                 ]);
             }
+
+            $credited = DB::transaction(function () use ($reference, $userId) {
+                $transaction = Transaction::where('reference', $reference)
+                    ->where('user_id', $userId)
+                    ->where('type', 'topup')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$transaction) {
+                    return 'not_found';
+                }
+
+                if ($transaction->status === 'completed') {
+                    return 'already_verified';
+                }
+
+                $transaction->update(['status' => 'completed']);
+                User::where('id', $userId)->increment('wallet_balance', $transaction->amount);
+
+                return 'success';
+            });
+
+            if ($credited === 'not_found') {
+                return response()->json(['success' => false, 'message' => 'Transaction not found']);
+            }
+            if ($credited === 'already_verified') {
+                return response()->json(['success' => false, 'message' => 'Transaction already verified']);
+            }
+
+            return response()->json(['success' => true, 'message' => 'Payment verified and balance updated']);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,

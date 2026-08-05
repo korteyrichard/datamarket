@@ -45,6 +45,7 @@ export default function DashboardLayout({ user, header, children }: DashboardLay
         { name: 'Wallet', href: route('dashboard.wallet'), icon: 'Wallet', current: route().current('dashboard.wallet') },
         { name: 'Whatsapp Group', href: route('dashboard.joinUs'), icon: 'Contact', current: route().current('dashboard.joinUs') },
         { name: 'Orders', href: route('dashboard.orders'), icon: 'Package', current: route().current('dashboard.orders') },
+        { name: 'Mashup Orders', href: route('dashboard.mashup-orders'), icon: 'Zap', current: route().current('dashboard.mashup-orders') },
         { name: 'Transactions', href: route('dashboard.transactions'), icon: 'Receipt', current: route().current('dashboard.transactions') },
         { name: 'Terms And Conditions', href: route('dashboard.terms'), icon: 'FileText', current: route().current('dashboard.terms') },
     ];

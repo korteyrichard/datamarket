@@ -14,7 +14,7 @@ class CodeCraftOrderPusherService
 
     public function __construct()
     {
-        $this->apiKey = env('CODECRAFT_API_KEY', '260217092600-xcsKzj-rjxVWK-KbZbxE-MRtOB5-1DS|8i');
+        $this->apiKey = config('services.codecraft.api_key');
     }
 
     public function pushOrderToApi(Order $order)

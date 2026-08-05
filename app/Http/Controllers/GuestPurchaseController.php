@@ -11,6 +11,8 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use App\Services\OrderPusherService;
 use App\Services\CodeCraftOrderPusherService;
+use App\Services\CodeCraftMtnOrderPusherService;
+use App\Models\Setting;
 
 class GuestPurchaseController extends Controller
 {
@@ -110,10 +112,11 @@ class GuestPurchaseController extends Controller
 
         $network = strtolower($order->network ?? '');
 
-        if (stripos($network, 'mtn') !== false) {
+        if (stripos($network, 'mtn') !== false && Setting::get('codecraft_mtn_api_enabled', 'false') === 'true') {
+            $orderPusher = new CodeCraftMtnOrderPusherService();
+        } elseif (stripos($network, 'mtn') !== false) {
             $orderPusher = new OrderPusherService();
-        }
-        else {
+        } else {
             $orderPusher = new CodeCraftOrderPusherService();
         }
 
@@ -295,10 +298,11 @@ class GuestPurchaseController extends Controller
             try {
                 $network = strtolower($order->network ?? '');
 
-                if (stripos($network, 'mtn') !== false) {
+                if (stripos($network, 'mtn') !== false && Setting::get('codecraft_mtn_api_enabled', 'false') === 'true') {
+                    $orderPusher = new CodeCraftMtnOrderPusherService();
+                } elseif (stripos($network, 'mtn') !== false) {
                     $orderPusher = new OrderPusherService();
-                }
-                else {
+                } else {
                     $orderPusher = new CodeCraftOrderPusherService();
                 }
 

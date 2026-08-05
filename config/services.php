@@ -45,4 +45,12 @@ return [
         'secret_key' => env('PAYSTACK_SECRET_KEY'),
     ],
 
+    'codecraft' => [
+        'api_key' => env('CODECRAFT_API_KEY', ''),
+    ],
+
+    'dataflow' => [
+        'api_token' => env('DATAFLOW_API_TOKEN', ''),
+    ],
+
 ];

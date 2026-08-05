@@ -36,6 +36,8 @@ interface AdminDashboardProps extends PageProps {
   totalRevenue: number;
   apiEnabled: boolean;
   codeCraftApiEnabled: boolean;
+  codeCraftMtnApiEnabled: boolean;
+  dataFlowMtnApiEnabled: boolean;
 }
 
 const StatCard = ({ title, value }: { title: string; value: number | string }) => (
@@ -57,12 +59,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   totalRevenue,
   apiEnabled,
   codeCraftApiEnabled,
+  codeCraftMtnApiEnabled,
+  dataFlowMtnApiEnabled,
 }) => {
   const { auth } = usePage<AdminDashboardProps>().props;
   const [isApiEnabled, setIsApiEnabled] = useState(apiEnabled);
   const [isCodeCraftApiEnabled, setIsCodeCraftApiEnabled] = useState(codeCraftApiEnabled);
+  const [isCodeCraftMtnApiEnabled, setIsCodeCraftMtnApiEnabled] = useState(codeCraftMtnApiEnabled);
+  const [isDataFlowMtnApiEnabled, setIsDataFlowMtnApiEnabled] = useState(dataFlowMtnApiEnabled);
   const [isToggling, setIsToggling] = useState(false);
   const [isTogglingCodeCraft, setIsTogglingCodeCraft] = useState(false);
+  const [isTogglingCodeCraftMtn, setIsTogglingCodeCraftMtn] = useState(false);
+  const [isTogglingDataFlowMtn, setIsTogglingDataFlowMtn] = useState(false);
 
   const handleApiToggle = () => {
     setIsToggling(true);
@@ -90,6 +98,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       },
       onError: () => {
         setIsTogglingCodeCraft(false);
+      },
+    });
+  };
+
+  const handleCodeCraftMtnApiToggle = () => {
+    setIsTogglingCodeCraftMtn(true);
+    router.post(route('admin.codecraft.mtn.api.toggle'), {
+      enabled: !isCodeCraftMtnApiEnabled,
+    }, {
+      onSuccess: () => {
+        setIsCodeCraftMtnApiEnabled(!isCodeCraftMtnApiEnabled);
+        setIsTogglingCodeCraftMtn(false);
+      },
+      onError: () => {
+        setIsTogglingCodeCraftMtn(false);
+      },
+    });
+  };
+
+  const handleDataFlowMtnApiToggle = () => {
+    setIsTogglingDataFlowMtn(true);
+    router.post('/admin/dataflow-mtn-api/toggle', {
+      enabled: !isDataFlowMtnApiEnabled,
+    }, {
+      onSuccess: () => {
+        setIsDataFlowMtnApiEnabled(!isDataFlowMtnApiEnabled);
+        setIsTogglingDataFlowMtn(false);
+      },
+      onError: () => {
+        setIsTogglingDataFlowMtn(false);
       },
     });
   };
@@ -200,6 +238,74 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                 }`}>
                   {isCodeCraftApiEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            </div>
+
+            {/* CodeCraft MTN API */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 dark:text-white">CodeCraft MTN API</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
+                    {isCodeCraftMtnApiEnabled ? 'MTN orders are being sent to CodeCraft API instead of Jaybart' : 'MTN orders are being sent to Jaybart (default)'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleCodeCraftMtnApiToggle}
+                  disabled={isTogglingCodeCraftMtn}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    isCodeCraftMtnApiEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
+                  } ${isTogglingCodeCraftMtn ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isCodeCraftMtnApiEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  isCodeCraftMtnApiEnabled 
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                }`}>
+                  {isCodeCraftMtnApiEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            </div>
+
+            {/* DataFlow MTN API */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 dark:text-white">DataFlow MTN API</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
+                    {isDataFlowMtnApiEnabled ? 'MTN orders are being sent to DataFlow Ghana API (highest priority)' : 'DataFlow MTN API is disabled'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleDataFlowMtnApiToggle}
+                  disabled={isTogglingDataFlowMtn}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    isDataFlowMtnApiEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
+                  } ${isTogglingDataFlowMtn ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isDataFlowMtnApiEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="mt-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  isDataFlowMtnApiEnabled 
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                }`}>
+                  {isDataFlowMtnApiEnabled ? 'Enabled' : 'Disabled'}
                 </span>
               </div>
             </div>

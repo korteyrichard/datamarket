@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
 use App\Services\SmsService;
+use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
@@ -24,10 +25,10 @@ class DashboardController extends Controller
         // Filter products based on user role and stock status, sorted by quantity
         if ($user->isAdmin()) {
             // Admin can see all products
-            $products = Product::inStock()->orderBy('quantity', 'asc')->get();
+            $products = Product::inStock()->orderByRaw('CAST(quantity AS DECIMAL(10,2)) ASC')->get();
         } else {
             // Use role-based filtering for other users
-            $products = Product::forRole($user->role)->inStock()->orderBy('quantity', 'asc')->get();
+            $products = Product::forRole($user->role)->inStock()->orderByRaw('CAST(quantity AS DECIMAL(10,2)) ASC')->get();
         }
         
         $cartCount = 0;
@@ -159,27 +160,38 @@ class DashboardController extends Controller
 
         if ($response->successful() && $response->json('data.status') === 'success') {
             $paymentData = $response->json('data');
-            $metadata = $paymentData['metadata'];
-            
-            $transaction = Transaction::find($metadata['transaction_id']);
-            $user = auth()->user();
-            
-            if ($transaction && $transaction->status === 'pending') {
-                // Get the actual amount from metadata (excluding transaction fee)
-                $actualAmount = isset($metadata['actual_amount']) ? $metadata['actual_amount'] : $transaction->amount;
-                
-                // Update wallet balance with the actual amount (not including fee)
-                $user->wallet_balance += $actualAmount;
-                $user->save();
-                
-                // Update transaction status
-                $transaction->update(['status' => 'completed']);
-                
-                // Send SMS notification
-                if ($user->phone) {
+            $metadata = $paymentData['metadata'] ?? [];
+            $transactionId = $metadata['transaction_id'] ?? null;
+
+            if ($transactionId) {
+                $smsData = DB::transaction(function () use ($transactionId, $metadata) {
+                    $transaction = Transaction::where('id', $transactionId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$transaction || $transaction->status !== 'pending') {
+                        return null;
+                    }
+
+                    $actualAmount = isset($metadata['actual_amount']) ? (float) $metadata['actual_amount'] : $transaction->amount;
+
+                    $transaction->update(['status' => 'completed']);
+
+                    $user = \App\Models\User::where('id', $transaction->user_id)->lockForUpdate()->first();
+                    $user->increment('wallet_balance', $actualAmount);
+                    $user->refresh();
+
+                    return [
+                        'phone' => $user->phone,
+                        'amount' => $actualAmount,
+                        'balance' => $user->wallet_balance,
+                    ];
+                });
+
+                if ($smsData && $smsData['phone']) {
                     $smsService = new SmsService();
-                    $message = "Your wallet has been topped up with GHS " . number_format($actualAmount, 2) . ". New balance: GHS " . number_format($user->wallet_balance, 2);
-                    $smsService->sendSms($user->phone, $message);
+                    $message = "Your wallet has been topped up with GHS " . number_format($smsData['amount'], 2) . ". New balance: GHS " . number_format($smsData['balance'], 2);
+                    $smsService->sendSms($smsData['phone'], $message);
                 }
             }
         }

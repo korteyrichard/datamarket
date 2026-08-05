@@ -11,6 +11,9 @@ use App\Http\Controllers\TransactionsController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\GuestPurchaseController;
+use App\Http\Controllers\MashupController;
+use App\Http\Controllers\AdminMashupController;
+use App\Http\Controllers\GuestMashupController;
 
 Route::get('/', [GuestPurchaseController::class, 'index'])->name('home');
 Route::post('/guest/checkout', [GuestPurchaseController::class, 'checkout'])->name('guest.checkout');
@@ -18,6 +21,12 @@ Route::get('/guest/payment/callback', [GuestPurchaseController::class, 'handleCa
 Route::get('/guest/order/success/{order}', [GuestPurchaseController::class, 'orderSuccess'])->name('guest.order.success');
 Route::post('/guest/track-order', [GuestPurchaseController::class, 'trackOrder'])->name('guest.track.order');
 Route::post('/guest/create-order-from-reference', [GuestPurchaseController::class, 'createOrderFromReference'])->name('guest.create.order.reference');
+
+// Guest Mashup routes
+Route::get('/mashup', [GuestMashupController::class, 'index'])->name('guest.mashup');
+Route::post('/mashup/checkout', [GuestMashupController::class, 'checkout'])->name('guest.mashup.checkout');
+Route::get('/mashup/callback', [GuestMashupController::class, 'handleCallback'])->name('guest.mashup.callback');
+Route::post('/mashup/track', [GuestMashupController::class, 'trackOrder'])->name('guest.mashup.track');
 
 Route::get('/become-a-dealer', function () {
         $user = auth()->user();
@@ -58,6 +67,8 @@ Route::middleware(['auth', 'verified', 'role:dealer'])->group(function () {
     Route::post('/dealer/withdraw', [\App\Http\Controllers\DealerWebController::class, 'requestWithdrawal'])->name('dealer.withdraw');
     Route::post('/dealer/products', [\App\Http\Controllers\DealerWebController::class, 'addProduct'])->name('dealer.products.add');
     Route::delete('/dealer/products/{product}', [\App\Http\Controllers\DealerWebController::class, 'removeProduct'])->name('dealer.products.remove');
+    Route::post('/dealer/mashup-products', [\App\Http\Controllers\DealerWebController::class, 'addMashupProduct'])->name('dealer.mashup-products.add');
+    Route::delete('/dealer/mashup-products/{mashupPackage}', [\App\Http\Controllers\DealerWebController::class, 'removeMashupProduct'])->name('dealer.mashup-products.remove');
     
     // Debug route for testing
     Route::get('/dealer/debug', function() {
@@ -87,6 +98,11 @@ Route::post('/shop/create-order-from-reference', [\App\Http\Controllers\PublicSh
 Route::get('/agent/order/callback', [\App\Http\Controllers\PublicShopController::class, 'handleOrderCallback'])->name('agent.order.callback');
 Route::get('/agent/order/success/{order}', [\App\Http\Controllers\PublicShopController::class, 'orderSuccess'])->name('agent.order.success');
 
+// Shop Mashup routes
+Route::post('/shop/mashup/checkout', [\App\Http\Controllers\PublicShopController::class, 'mashupCheckout'])->name('shop.mashup.checkout');
+Route::get('/shop/mashup/callback', [\App\Http\Controllers\PublicShopController::class, 'mashupCallback'])->name('shop.mashup.callback');
+Route::post('/shop/mashup/track', [\App\Http\Controllers\PublicShopController::class, 'mashupTrackOrder'])->name('shop.mashup.track');
+
 // Admin dealer management routes (formerly agent management)
 Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     Route::get('/admin/dealers', [\App\Http\Controllers\AdminAgentWebController::class, 'agents'])->name('admin.dealers');
@@ -109,13 +125,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard/joinUs', [JoinUsController::class, 'index'])->name('dashboard.joinUs');
     Route::get('/dashboard/orders', [OrdersController::class, 'index'])->name('dashboard.orders');
     Route::get('/dashboard/transactions', [TransactionsController::class, 'index'])->name('dashboard.transactions');
+    Route::get('/dashboard/mashup-orders', [MashupController::class, 'index'])->name('dashboard.mashup-orders');
+    Route::post('/dashboard/mashup-orders', [MashupController::class, 'store'])->name('dashboard.mashup-orders.store');
     Route::get('/dashboard/terms', [DashboardController::class, 'terms'])->name('dashboard.terms');
     Route::get('/dashboard/api-docs', [\App\Http\Controllers\ApiDocsController::class, 'index'])->name('dashboard.api-docs');
     Route::post('/api/generate-key', [\App\Http\Controllers\ApiDocsController::class, 'generateApiKey'])->name('api.docs.generate-key');
     
     // Cart routes
     Route::post('/add-to-cart', [CartController::class, 'store'])->name('add.to.cart');
+    Route::post('/bulk-add-to-cart', [CartController::class, 'bulkStore'])->name('bulk.add.to.cart');
     Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
+    Route::delete('/cart/clear', [CartController::class, 'clearAll'])->name('cart.clear');
     Route::delete('/cart/{cart}', [CartController::class, 'destroy'])->name('remove.from.cart');
 
     // Wallet balance route
@@ -153,12 +173,23 @@ Route::middleware(['auth', 'verified', 'role:admin'])->name('admin.')->group(fun
     Route::get('admin/transactions', [\App\Http\Controllers\AdminDashboardController::class, 'transactions'])->name('transactions');
     Route::get('admin/users/{user}/transactions', [\App\Http\Controllers\AdminDashboardController::class, 'userTransactions'])->name('users.transactions');
     Route::post('admin/orders/export', [\App\Http\Controllers\AdminDashboardController::class, 'exportOrders'])->name('orders.export');
+    Route::post('admin/orders/bulk-retry', [\App\Http\Controllers\AdminDashboardController::class, 'bulkRetryOrders'])->name('orders.bulkRetry');
+    Route::post('admin/orders/{order}/retry', [\App\Http\Controllers\AdminDashboardController::class, 'retryOrder'])->name('orders.retry');
     Route::post('admin/api/toggle', [\App\Http\Controllers\AdminDashboardController::class, 'toggleApi'])->name('api.toggle');
     Route::post('admin/codecraft-api/toggle', [\App\Http\Controllers\AdminDashboardController::class, 'toggleCodeCraftApi'])->name('codecraft.api.toggle');
+    Route::post('admin/codecraft-mtn-api/toggle', [\App\Http\Controllers\AdminDashboardController::class, 'toggleCodeCraftMtnApi'])->name('codecraft.mtn.api.toggle');
+    Route::post('admin/dataflow-mtn-api/toggle', [\App\Http\Controllers\AdminDashboardController::class, 'toggleDataFlowMtnApi'])->name('dataflow.mtn.api.toggle');
     Route::get('admin/alerts', [\App\Http\Controllers\AdminDashboardController::class, 'alerts'])->name('alerts');
     Route::post('admin/alerts', [\App\Http\Controllers\AdminDashboardController::class, 'storeAlert'])->name('alerts.store');
     Route::put('admin/alerts/{alert}', [\App\Http\Controllers\AdminDashboardController::class, 'updateAlert'])->name('alerts.update');
     Route::delete('admin/alerts/{alert}', [\App\Http\Controllers\AdminDashboardController::class, 'deleteAlert'])->name('alerts.delete');
+    Route::get('admin/mashup-packages', [AdminMashupController::class, 'index'])->name('mashup-packages');
+    Route::post('admin/mashup-packages', [AdminMashupController::class, 'store'])->name('mashup-packages.store');
+    Route::put('admin/mashup-packages/{mashupPackage}', [AdminMashupController::class, 'update'])->name('mashup-packages.update');
+    Route::delete('admin/mashup-packages/{mashupPackage}', [AdminMashupController::class, 'destroy'])->name('mashup-packages.delete');
+    Route::put('admin/mashup-orders/bulk-status', [AdminMashupController::class, 'bulkUpdateStatus'])->name('mashup-orders.bulkUpdateStatus');
+    Route::post('admin/mashup-orders/export', [AdminMashupController::class, 'export'])->name('mashup-orders.export');
+    Route::put('admin/mashup-orders/{mashupOrder}/status', [AdminMashupController::class, 'updateOrderStatus'])->name('mashup-orders.updateStatus');
     Route::get('admin/commissions', [\App\Http\Controllers\AdminDashboardController::class, 'commissions'])->name('commissions');
     Route::post('admin/referral-commissions/{referralCommission}/available', [\App\Http\Controllers\AdminDashboardController::class, 'makeReferralCommissionAvailable'])->name('referral-commissions.available');
 });
